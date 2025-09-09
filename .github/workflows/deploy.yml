@@ -22,7 +22,7 @@ jobs:
         
     - name: Package Artifacts
       run: |
-        zip -r website.zip . -x "*.git*" "*.github*" "*.DS_Store*" "*.yml" "*.md" "*.sh"
+        zip -r website.zip . -x "*.git*" "*.github*" "*.DS_Store*" "pipeline.yml" "*.md" "*.sh"
         
     - name: Upload to Pipeline Artifacts
       run: |
