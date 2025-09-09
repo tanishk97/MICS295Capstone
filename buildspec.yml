@@ -14,4 +14,4 @@ phases:
   post_build:
     commands:
       - echo "Deployment completed successfully"
-      - echo "Website URL: http://mics295-capstone-website.s3-website-us-east-1.amazonaws.com"
+      - 'echo "Website URL: http://mics295-capstone-website.s3-website-us-east-1.amazonaws.com"'
