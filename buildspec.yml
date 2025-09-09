@@ -1,14 +1,18 @@
 version: 0.2
 
 phases:
+  pre_build:
+    commands:
+      - echo "Starting deployment phase"
+      
   build:
     commands:
-      - echo "Building static website"
-      - ls -la
+      - echo "Extracting artifacts..."
+      - unzip -o website-*.zip
+      - echo "Deploying to S3..."
+      - aws s3 sync . s3://mics295-capstone-website --exclude "*.zip" --exclude "artifacts/*" --exclude ".git/*" --exclude "*.yml" --exclude "*.md" --exclude "*.sh"
+      
   post_build:
     commands:
-      - echo "Build completed"
-
-artifacts:
-  files:
-    - '**/*'
+      - echo "Deployment completed successfully"
+      - echo "Website URL: http://mics295-capstone-website.s3-website-us-east-1.amazonaws.com"

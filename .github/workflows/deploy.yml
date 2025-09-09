@@ -1,14 +1,33 @@
-name: Deploy to S3
+name: CI/CD Pipeline
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
+  ci:
     runs-on: codebuild-test2Build-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
     - uses: actions/checkout@v3
     
-    - name: Deploy to S3
-      run: ./deploy.sh
+    - name: Run Tests
+      run: |
+        echo "Running tests..."
+        # Add your test commands here
+        
+    - name: Build Application
+      run: |
+        echo "Building static website..."
+        ls -la
+        
+    - name: Package Artifacts
+      run: |
+        zip -r website-${{ github.sha }}.zip . -x "*.git*" "*.github*" "*.DS_Store*"
+        
+    - name: Upload to Pipeline Artifacts
+      run: |
+        aws s3 cp website-${{ github.sha }}.zip s3://mics295-capstone-website/artifacts/
+        
+    - name: Trigger CodePipeline
+      run: |
+        aws codepipeline start-pipeline-execution --name mics295-pipeline
