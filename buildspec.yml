@@ -5,14 +5,12 @@ phases:
     commands:
       - echo "Starting deployment phase"
       - ls -la
-      
   build:
     commands:
       - echo "Extracting and deploying artifacts..."
       - unzip -o website.zip || echo "No zip file found, deploying current files"
       - echo "Deploying to S3..."
       - aws s3 sync . s3://mics295-capstone-website --exclude "*.zip" --exclude "artifacts/*" --exclude ".git/*" --exclude "*.yml" --exclude "*.md" --exclude "*.sh" --exclude "*.DS_Store"
-      
   post_build:
     commands:
       - echo "Deployment completed successfully"
