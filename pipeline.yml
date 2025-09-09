@@ -73,7 +73,7 @@ Resources:
       RoleArn: !GetAtt CodePipelineRole.Arn
       ArtifactStore:
         Type: S3
-        Location: mics295-capstone-website
+        Location: mics295-pipeline-artifacts
       Stages:
         - Name: Source
           Actions:
@@ -84,8 +84,8 @@ Resources:
                 Provider: S3
                 Version: '1'
               Configuration:
-                S3Bucket: mics295-capstone-website
-                S3ObjectKey: artifacts/website.zip
+                S3Bucket: mics295-pipeline-artifacts
+                S3ObjectKey: website.zip
               OutputArtifacts:
                 - Name: SourceOutput
         - Name: Deploy
