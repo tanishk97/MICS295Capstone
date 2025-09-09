@@ -25,11 +25,38 @@ Resources:
                   - codebuild:StartBuild
                 Resource: '*'
 
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - arn:aws:s3:::mics295-capstone-website
+                  - arn:aws:s3:::mics295-capstone-website/*
+
   DeployBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
       Name: mics295-deploy
-      ServiceRole: !GetAtt CodePipelineRole.Arn
+      ServiceRole: !GetAtt CodeBuildRole.Arn
       Artifacts:
         Type: CODEPIPELINE
       Environment:
@@ -58,7 +85,7 @@ Resources:
                 Version: '1'
               Configuration:
                 S3Bucket: mics295-capstone-website
-                S3ObjectKey: artifacts/
+                S3ObjectKey: artifacts/website.zip
               OutputArtifacts:
                 - Name: SourceOutput
         - Name: Deploy
