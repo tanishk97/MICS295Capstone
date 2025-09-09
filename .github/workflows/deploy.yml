@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: codebuild-mics295-build-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: codebuild-test2Build-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
     - uses: actions/checkout@v3
     
