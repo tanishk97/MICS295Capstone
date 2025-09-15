@@ -53,7 +53,7 @@ jobs:
 
     - name: Create provenance predicate
       run: |
-        cat > provenance.json <<'JSON'
+        cat > provenance.json <<JSON
         {
           "builder": {
             "id": "https://github.com/actions/runner"
