@@ -79,23 +79,46 @@ def promote_to_website(staging_bucket, key):
 
 def handler(event, context):
     try:
+        # Log the received event for debugging
+        print(f"Received event: {json.dumps(event, indent=2)}")
+        
         # Handle S3 event or direct invocation
         if "Records" in event:
             rec = event["Records"][0]
             bucket = rec["s3"]["bucket"]["name"]
             key = rec["s3"]["object"]["key"]
+            print(f"Processing S3 event - Bucket: {bucket}, Key: {key}")
         else:
             bucket = event["bucket"]
             key = event["key"]
+            print(f"Processing direct invocation - Bucket: {bucket}, Key: {key}")
 
         # Only process .tgz files
         if not key.endswith('.tgz'):
+            print(f"Skipping non-tarball file: {key}")
             return {"message": "Skipped non-tarball file", "key": key}
 
         base = key.rsplit("/", 1)[-1]
         sig_key = base + ".sig"
         pem_key = base + ".pem"
         att_key = base + ".attestation.sigstore"
+        
+        print(f"Looking for files: {key}, {sig_key}, {pem_key}, {att_key}")
+
+        # Check if all required files exist before processing
+        try:
+            S3.head_object(Bucket=bucket, Key=key)
+            S3.head_object(Bucket=bucket, Key=sig_key)
+            S3.head_object(Bucket=bucket, Key=pem_key)
+            S3.head_object(Bucket=bucket, Key=att_key)
+            print("All required files found, proceeding with verification")
+        except S3.exceptions.NoSuchKey as e:
+            print(f"Missing file: {e}")
+            return {
+                "message": "Required files not yet available, will retry later",
+                "key": key,
+                "required_files": [key, sig_key, pem_key, att_key]
+            }
 
         with tempfile.TemporaryDirectory() as d:
             # Download all required files
