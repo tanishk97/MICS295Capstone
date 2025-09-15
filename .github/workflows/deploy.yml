@@ -55,10 +55,25 @@ jobs:
       run: |
         cat > provenance.json <<'JSON'
         {
-          "buildType": "https://github.com/actions/build",
-          "buildConfig": {
-            "repo": "${{ github.repository }}",
-            "sha": "${{ github.sha }}"
+          "builder": {
+            "id": "https://github.com/actions/runner"
+          },
+          "buildType": "https://github.com/actions/runner",
+          "invocation": {
+            "configSource": {
+              "uri": "${{ github.server_url }}/${{ github.repository }}",
+              "digest": {
+                "sha1": "${{ github.sha }}"
+              }
+            }
+          },
+          "metadata": {
+            "buildStartedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "completeness": {
+              "parameters": true,
+              "environment": false,
+              "materials": false
+            }
           }
         }
         JSON
