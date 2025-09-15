@@ -32,12 +32,42 @@ Integrate SalsaGate trust pipeline (cryptographic attestation using Sigstore cos
 - Trust pipeline integrated into main deployment workflow
 - Templates created for AWS infrastructure
 - **Workflow executed successfully** - signed artifacts in staging bucket
-- Lambda function created for automatic verification
+- **Lambda function deployed** - automatic verification active
+- **DynamoDB table created** - audit trail operational
+- **S3 triggers configured** - end-to-end automation working
 
 ## Completed Steps (Updated)
 
 ### 4. Workflow Execution ✅
 - **Tested**: GitHub Actions workflow ran successfully
+- **Generated**: Signed artifacts with commit SHA in staging bucket:
+  - `site-<sha>.tgz` (website tarball)
+  - `site-<sha>.tgz.sig` (cryptographic signature)
+  - `site-<sha>.tgz.pem` (certificate)
+  - `site-<sha>.tgz.attestation.sigstore` (SLSA attestation)
+  - `sbom-<sha>.spdx.json` (software bill of materials)
+  - `provenance.json` (build metadata)
+
+### 5. Lambda Trust Service ✅
+- **Created**: `trust-service/handler.py` - Automatic verification function
+- **Created**: `trust-service/Dockerfile` - Container with cosign binary
+- **Created**: `trust-service/requirements.txt` - Python dependencies
+- **Built**: Container image using EC2 (avoided Mac Docker compatibility issues)
+- **Deployed**: Lambda function from ECR container image
+- **Fixed**: Architecture mismatch and missing file handling errors
+- **Added**: Comprehensive event logging for debugging
+
+### 6. DynamoDB Audit Trail ✅
+- **Created**: `trust-ledger` table with partition key `object_key` (String)
+- **Schema**: Records verification status, timestamp, digest, and cosign output
+- **Billing**: Pay-per-request mode for cost efficiency
+- **Integration**: Lambda logs all verification attempts automatically
+
+### 7. S3 Event Configuration ✅
+- **Trigger**: S3 event notification on staging bucket uploads
+- **Filter**: Prefix `site-`, suffix `.tgz` (only triggers on tarballs)
+- **Target**: Lambda function for automatic verification
+- **Behavior**: Graceful handling when signature files not yet available
 - **Generated**: Signed artifacts with commit SHA in staging bucket:
   - `site-<sha>.tgz` (website tarball)
   - `site-<sha>.tgz.sig` (cryptographic signature)
