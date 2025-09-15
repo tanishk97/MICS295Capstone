@@ -1,14 +1,24 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline with Trust Attestation
 
 on:
   push:
     branches: [ main ]
 
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  STAGING_BUCKET: mics295-pipeline-artifacts
+  ACCOUNT_ID: 814074632338
+  ROLE_ARN: arn:aws:iam::814074632338:role/GHAOIDCDeployRole
+
 jobs:
   ci:
     runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Run Tests
       run: |
@@ -18,16 +28,84 @@ jobs:
     - name: Build Application
       run: |
         echo "Building static website..."
-        ls -la
+        mkdir -p dist
+        cp index.html dist/
+        # Copy any other static assets if they exist
+        if [ -d "assets" ]; then cp -r assets dist/; fi
+        if [ -d "css" ]; then cp -r css dist/; fi
+        if [ -d "js" ]; then cp -r js dist/; fi
+        ls -la dist/
         
-    - name: Package Artifacts
+    - name: Package Artifacts with Trust Pipeline
       run: |
+        # Create tarball for trust pipeline
+        tar -czf site-${{ github.sha }}.tgz -C dist .
+        
+        # Keep legacy zip for existing pipeline
         zip -r website.zip . -x "*.git*" "*.github*" "*.DS_Store*" "pipeline.yml" "*.md" "*.sh"
-        
-    - name: Upload to Pipeline Artifacts
+
+    - name: Generate SBOM
+      uses: anchore/sbom-action@v0
+      with:
+        path: ./dist
+        format: spdx-json
+        output-file: sbom-${{ github.sha }}.spdx.json
+
+    - name: Create provenance predicate
       run: |
-        aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
-        
-    - name: Trigger CodePipeline
+        cat > provenance.json <<'JSON'
+        {
+          "buildType": "https://github.com/actions/build",
+          "buildConfig": {
+            "repo": "${{ github.repository }}",
+            "sha": "${{ github.sha }}"
+          }
+        }
+        JSON
+
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3
+
+    - name: Sign tarball
       run: |
-        aws codepipeline start-pipeline-execution --name mics295-pipeline
+        cosign sign-blob --yes \
+          --output-signature site-${{ github.sha }}.tgz.sig \
+          --output-certificate site-${{ github.sha }}.tgz.pem \
+          site-${{ github.sha }}.tgz
+
+    - name: Attest tarball
+      run: |
+        cosign attest-blob --yes \
+          --predicate provenance.json \
+          --type slsaprovenance \
+          --bundle site-${{ github.sha }}.tgz.attestation.sigstore \
+          site-${{ github.sha }}.tgz
+
+    - name: Configure AWS creds (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ env.ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Upload signed artifacts to staging
+      run: |
+        aws s3 cp site-${{ github.sha }}.tgz \
+          s3://${{ env.STAGING_BUCKET }}/site-${{ github.sha }}.tgz
+        aws s3 cp site-${{ github.sha }}.tgz.sig \
+          s3://${{ env.STAGING_BUCKET }}/site-${{ github.sha }}.tgz.sig
+        aws s3 cp site-${{ github.sha }}.tgz.pem \
+          s3://${{ env.STAGING_BUCKET }}/site-${{ github.sha }}.tgz.pem
+        aws s3 cp site-${{ github.sha }}.tgz.attestation.sigstore \
+          s3://${{ env.STAGING_BUCKET }}/site-${{ github.sha }}.tgz.attestation.sigstore
+        aws s3 cp sbom-${{ github.sha }}.spdx.json \
+          s3://${{ env.STAGING_BUCKET }}/sbom-${{ github.sha }}.spdx.json
+        aws s3 cp provenance.json \
+          s3://${{ env.STAGING_BUCKET }}/provenance.json
+        
+    # - name: Upload to Pipeline Artifacts (Legacy)
+    #   run: |
+    #     aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
+        
+    # - name: Trigger CodePipeline (Legacy)
+    #   run: |
+    #     aws codepipeline start-pipeline-execution --name mics295-pipeline

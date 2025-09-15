@@ -1,0 +1,48 @@
+{
+  "RoleName": "GHAOIDCDeployRole",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+        },
+        "Action": "sts:AssumeRoleWithWebIdentity",
+        "Condition": {
+          "StringEquals": {
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+          },
+          "StringLike": {
+            "token.actions.githubusercontent.com:sub": "repo:<YOUR_GITHUB_USERNAME>/MICS295Capstone:*"
+          }
+        }
+      }
+    ]
+  },
+  "Policies": [
+    {
+      "PolicyName": "S3Access",
+      "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject",
+              "s3:PutObject",
+              "s3:PutObjectTagging",
+              "s3:ListBucket"
+            ],
+            "Resource": [
+              "arn:aws:s3:::STAGING_BUCKET",
+              "arn:aws:s3:::STAGING_BUCKET/*",
+              "arn:aws:s3:::WEBSITE_BUCKET",
+              "arn:aws:s3:::WEBSITE_BUCKET/*"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
