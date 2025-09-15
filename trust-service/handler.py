@@ -93,21 +93,27 @@ def handler(event, context):
             key = event["key"]
             print(f"Processing direct invocation - Bucket: {bucket}, Key: {key}")
 
-        # Only process .tgz files
-        if not key.endswith('.tgz'):
-            print(f"Skipping non-tarball file: {key}")
-            return {"message": "Skipped non-tarball file", "key": key}
+        # Handle both .tgz and .attestation.sigstore triggers
+        if key.endswith('.tgz'):
+            tarball_key = key
+        elif key.endswith('.attestation.sigstore'):
+            # Extract tarball name from attestation file
+            tarball_key = key.replace('.attestation.sigstore', '')
+            print(f"Extracted tarball key from attestation: {tarball_key}")
+        else:
+            print(f"Skipping unsupported file: {key}")
+            return {"message": "Skipped unsupported file", "key": key}
 
-        base = key.rsplit("/", 1)[-1]
+        base = tarball_key.rsplit("/", 1)[-1]
         sig_key = base + ".sig"
         pem_key = base + ".pem"
         att_key = base + ".attestation.sigstore"
         
-        print(f"Looking for files: {key}, {sig_key}, {pem_key}, {att_key}")
+        print(f"Looking for files: {tarball_key}, {sig_key}, {pem_key}, {att_key}")
 
         # Check if all required files exist before processing
         try:
-            S3.head_object(Bucket=bucket, Key=key)
+            S3.head_object(Bucket=bucket, Key=tarball_key)
             S3.head_object(Bucket=bucket, Key=sig_key)
             S3.head_object(Bucket=bucket, Key=pem_key)
             S3.head_object(Bucket=bucket, Key=att_key)
@@ -116,8 +122,8 @@ def handler(event, context):
             print(f"Missing file: {e}")
             return {
                 "message": "Required files not yet available, will retry later",
-                "key": key,
-                "required_files": [key, sig_key, pem_key, att_key]
+                "key": tarball_key,
+                "required_files": [tarball_key, sig_key, pem_key, att_key]
             }
 
         with tempfile.TemporaryDirectory() as d:
@@ -127,7 +133,7 @@ def handler(event, context):
             p = os.path.join(d, pem_key)
             a = os.path.join(d, att_key)
             
-            S3.download_file(bucket, key, f)
+            S3.download_file(bucket, tarball_key, f)
             S3.download_file(bucket, sig_key, s)
             S3.download_file(bucket, pem_key, p)
             S3.download_file(bucket, att_key, a)
@@ -139,11 +145,11 @@ def handler(event, context):
             ok1, out1 = cosign_verify_sig(f, p, s)
             ok2, out2 = cosign_verify_att(f, a)
 
-        uri = f"s3://{bucket}/{key}"
+        uri = f"s3://{bucket}/{tarball_key}"
         
         if ok1 and ok2:
             # Tag as verified
-            tag_object(bucket, key, {"trust": "verified", "digest": digest})
+            tag_object(bucket, tarball_key, {"trust": "verified", "digest": digest})
             
             # Log success
             put_ledger(uri, "verified", out1 + "\n" + out2, digest)
@@ -151,7 +157,7 @@ def handler(event, context):
             # Auto-promote to website if configured
             promoted = False
             if WEBSITE_BUCKET:
-                promoted = promote_to_website(bucket, key)
+                promoted = promote_to_website(bucket, tarball_key)
             
             return {
                 "verified": True,
