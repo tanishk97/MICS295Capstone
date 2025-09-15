@@ -31,29 +31,45 @@ Integrate SalsaGate trust pipeline (cryptographic attestation using Sigstore cos
 ## Current State
 - Trust pipeline integrated into main deployment workflow
 - Templates created for AWS infrastructure
-- Workflow ready but needs configuration
+- **Workflow executed successfully** - signed artifacts in staging bucket
+- Lambda function created for automatic verification
+
+## Completed Steps (Updated)
+
+### 4. Workflow Execution ✅
+- **Tested**: GitHub Actions workflow ran successfully
+- **Generated**: Signed artifacts with commit SHA in staging bucket:
+  - `site-<sha>.tgz` (website tarball)
+  - `site-<sha>.tgz.sig` (cryptographic signature)
+  - `site-<sha>.tgz.pem` (certificate)
+  - `site-<sha>.tgz.attestation.sigstore` (SLSA attestation)
+  - `sbom-<sha>.spdx.json` (software bill of materials)
+  - `provenance.json` (build metadata)
+
+### 5. Lambda Trust Service ✅
+- **Created**: `trust-service/handler.py` - Automatic verification function
+- **Created**: `trust-service/Dockerfile` - Container with cosign binary
+- **Created**: `trust-service/requirements.txt` - Python dependencies
+- **Features**: Auto-verification, DynamoDB audit trail, optional auto-promotion
 
 ## Next Steps (TODO)
 
-### 4. AWS Infrastructure Setup ⏳
-- [ ] Replace `<REPLACE_ME>` placeholders in deploy.yml:
-  - STAGING_BUCKET name
-  - ACCOUNT_ID 
-- [ ] Create S3 buckets (staging + website)
-- [ ] Apply bucket policy to website bucket
-- [ ] Create IAM OIDC role using template
-- [ ] Update GitHub repo settings if needed
+### 6. Lambda Deployment ⏳
+- [ ] Build container image: `docker build -t trust-verifier .`
+- [ ] Push to ECR (Elastic Container Registry)
+- [ ] Deploy Lambda function from container image
+- [ ] Set environment variables (LEDGER_TABLE, WEBSITE_BUCKET)
+- [ ] Create DynamoDB table for audit trail
+- [ ] Configure S3 trigger on staging bucket
 
-### 5. Testing Phase ⏳
-- [ ] Commit and push to trigger workflow
-- [ ] Verify signed artifacts in staging bucket
+### 7. Infrastructure Completion ⏳
+- [ ] Create website S3 bucket with zero-trust policy
+- [ ] Test automatic verification on artifact upload
+- [ ] Verify end-to-end tamper detection
+
+### 8. Manual Verification Testing ⏳
 - [ ] Create verify-promote workflow for manual deployment
-- [ ] Test end-to-end trust verification
-
-### 6. Optional Enhancements ⏳
-- [ ] Deploy Lambda trust service for automatic verification
-- [ ] Set up DynamoDB ledger for audit trail
-- [ ] Configure S3 event triggers
+- [ ] Test manual verification and promotion process
 
 ## Key Files Modified
 ```
@@ -62,6 +78,10 @@ MICS295Capstone/
 ├── infra/
 │   ├── iam-gha-oidc-role.json (NEW)
 │   └── bucket-policy-website.json (NEW)
+├── trust-service/ (NEW)
+│   ├── handler.py (NEW - Lambda verification function)
+│   ├── Dockerfile (NEW - Container with cosign)
+│   └── requirements.txt (NEW)
 └── SESSION_CONTEXT.md (NEW - this file)
 ```
 
