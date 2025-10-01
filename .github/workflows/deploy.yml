@@ -96,11 +96,11 @@ jobs:
           --bundle site-${{ github.sha }}.tgz.attestation.sigstore \
           site-${{ github.sha }}.tgz
 
-    - name: Configure AWS creds (OIDC)
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        role-to-assume: ${{ env.ROLE_ARN }}
-        aws-region: ${{ env.AWS_REGION }}
+    # - name: Configure AWS creds (OIDC)
+    #   uses: aws-actions/configure-aws-credentials@v4
+    #   with:
+    #     role-to-assume: ${{ env.ROLE_ARN }}
+    #     aws-region: ${{ env.AWS_REGION }}
 
     - name: Upload signed artifacts to staging
       run: |
