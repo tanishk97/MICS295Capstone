@@ -96,11 +96,11 @@ jobs:
           --bundle site-${{ github.sha }}.tgz.attestation.sigstore \
           site-${{ github.sha }}.tgz
 
-    # - name: Configure AWS creds (OIDC)
-    #   uses: aws-actions/configure-aws-credentials@v4
-    #   with:
-    #     role-to-assume: ${{ env.ROLE_ARN }}
-    #     aws-region: ${{ env.AWS_REGION }}
+    - name: Configure AWS creds (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ env.ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Upload signed artifacts to staging
       run: |
@@ -117,10 +117,10 @@ jobs:
         aws s3 cp provenance.json \
           s3://${{ env.STAGING_BUCKET }}/provenance.json
         
-    # - name: Upload to Pipeline Artifacts (Legacy)
-    #   run: |
-    #     aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
+    - name: Upload to Pipeline Artifacts (Legacy)
+      run: |
+        aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
         
-    # - name: Trigger CodePipeline (Legacy)
-    #   run: |
-    #     aws codepipeline start-pipeline-execution --name mics295-pipeline
+    - name: Trigger CodePipeline (Legacy)
+      run: |
+        aws codepipeline start-pipeline-execution --name mics295-pipeline
