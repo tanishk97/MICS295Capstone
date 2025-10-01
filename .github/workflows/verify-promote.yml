@@ -1,0 +1,81 @@
+name: Verify and Promote Artifact
+
+on:
+  workflow_dispatch:
+    inputs:
+      object_key:
+        description: 'Artifact to verify (e.g., site-abc123.tgz)'
+        required: true
+        type: string
+      promote:
+        description: 'Promote to production after verification'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  STAGING_BUCKET: <REPLACE_WITH_STAGING_BUCKET>
+  WEBSITE_BUCKET: <REPLACE_WITH_WEBSITE_BUCKET>
+  ROLE_ARN: <REPLACE_WITH_ROLE_ARN>
+
+jobs:
+  verify-promote:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Download artifacts from staging
+        run: |
+          BASE="${{ inputs.object_key }}"
+          aws s3 cp s3://${{ env.STAGING_BUCKET }}/${BASE} .
+          aws s3 cp s3://${{ env.STAGING_BUCKET }}/${BASE}.sig .
+          aws s3 cp s3://${{ env.STAGING_BUCKET }}/${BASE}.pem .
+          aws s3 cp s3://${{ env.STAGING_BUCKET }}/${BASE}.attestation.sigstore .
+
+      - name: Verify signature
+        run: |
+          BASE="${{ inputs.object_key }}"
+          cosign verify-blob \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}.*" \
+            --signature ${BASE}.sig \
+            --certificate ${BASE}.pem \
+            ${BASE}
+
+      - name: Verify SLSA attestation
+        run: |
+          BASE="${{ inputs.object_key }}"
+          cosign verify-blob-attestation \
+            --type slsaprovenance \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}.*" \
+            --bundle ${BASE}.attestation.sigstore \
+            ${BASE}
+
+      - name: Promote to production
+        if: ${{ inputs.promote }}
+        run: |
+          BASE="${{ inputs.object_key }}"
+          aws s3 cp ${BASE} s3://${{ env.WEBSITE_BUCKET }}/ \
+            --tagging "trust=verified"
+          echo "✅ Artifact promoted to production with trust=verified tag"
+
+      - name: Verification complete
+        run: |
+          echo "🔒 Verification successful for ${{ inputs.object_key }}"
+          if [[ "${{ inputs.promote }}" == "true" ]]; then
+            echo "🚀 Artifact promoted to production"
+          else
+            echo "📋 Verification only - no promotion"
+          fi

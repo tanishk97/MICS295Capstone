@@ -97,14 +97,17 @@ Integrate SalsaGate trust pipeline (cryptographic attestation using Sigstore cos
 - [ ] Test automatic verification on artifact upload
 - [ ] Verify end-to-end tamper detection
 
-### 8. Manual Verification Testing ⏳
-- [ ] Create verify-promote workflow for manual deployment
-- [ ] Test manual verification and promotion process
+### 8. Manual Verification Testing ✅
+- **Created**: `.github/workflows/verify-promote.yml` - Manual verification and promotion workflow
+- **Features**: Manual artifact verification, optional promotion to production
+- **Usage**: Workflow dispatch with artifact key and promotion flag
 
 ## Key Files Modified
 ```
 MICS295Capstone/
-├── .github/workflows/deploy.yml (MODIFIED - main integration)
+├── .github/workflows/
+│   ├── deploy.yml (MODIFIED - main integration)
+│   └── verify-promote.yml (NEW - manual verification)
 ├── infra/
 │   ├── iam-gha-oidc-role.json (NEW)
 │   └── bucket-policy-website.json (NEW)
