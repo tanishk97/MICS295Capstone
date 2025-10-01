@@ -1,17 +1,40 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Hello World</title>
+    <title>MICS295 Capstone - Trust Pipeline Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .trust-badge { background: #28a745; color: white; padding: 10px 20px; border-radius: 5px; display: inline-block; margin: 10px 0; }
+        .timestamp { color: #666; font-size: 0.9em; }
+    </style>
 </head>
 <body>
-    <h1>Hello World! 9th Sep 2025</h1>
-    <p>Welcome to my MICS295 Capstone Project Original</p>
+    <div class="container">
+        <h1>🔒 MICS295 Capstone - Supply Chain Security Demo</h1>
+        <div class="trust-badge">✅ Cryptographically Signed & Verified</div>
+        
+        <h2>SalsaGate Trust Pipeline Integration</h2>
+        <p>This website demonstrates end-to-end supply chain security using:</p>
+        <ul>
+            <li><strong>Sigstore cosign</strong> - Cryptographic signing</li>
+            <li><strong>SLSA Provenance</strong> - Build attestation</li>
+            <li><strong>SBOM</strong> - Software Bill of Materials</li>
+            <li><strong>Zero-Trust Deployment</strong> - Verified artifacts only</li>
+            <li><strong>Central Trust Ledger</strong> - DynamoDB audit trail</li>
+        </ul>
+        
+        <h2>Security Features Implemented</h2>
+        <p>✅ Every artifact is cryptographically signed<br>
+        ✅ Automatic verification via Lambda function<br>
+        ✅ Tamper detection prevents compromised deployments<br>
+        ✅ Immutable audit trail in DynamoDB<br>
+        ✅ Manual verification with central ledger lookup</p>
+        
+        <div class="timestamp">
+            <p><strong>Last Updated:</strong> October 1, 2025 - Central Trust Ledger Demo</p>
+            <p><strong>Build Status:</strong> Signed, Verified, and Trusted 🛡️</p>
+        </div>
+    </div>
 </body>
 </html>
-<!-- Trigger build -->
-<!-- Test CodeBuild runner -->
-<!-- Test updated config -->
-<p>Testing CI/CD Pipeline - Tue Sep  9 00:29:13 EDT 2025</p>
-<p>Testing CI/CD Pipeline - Tue Sep  9 00:33:33 EDT 2025</p>
-<p>Testing Complete CI/CD Pipeline - Tue Sep  9 00:38:11 EDT 2025</p>
-<p>Testing separated buckets deployment - Tue Sep  9 01:14:48 EDT 2025</p>

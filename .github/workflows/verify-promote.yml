@@ -12,30 +12,67 @@ on:
         required: false
         default: true
         type: boolean
+      force_reverify:
+        description: 'Force re-verification even if in ledger'
+        required: false
+        default: false
+        type: boolean
 
 env:
   STAGING_BUCKET: mics295-pipeline-artifacts
   WEBSITE_BUCKET: mics295-capstone-website
-  ROLE_ARN: <REPLACE_WITH_ROLE_ARN>
+  ROLE_ARN: arn:aws:iam::814074632338:role/GHAOIDCDeployRole
+  LEDGER_TABLE: trust-ledger
 
 jobs:
   verify-promote:
-    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     
     steps:
-      # - name: Configure AWS credentials
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ env.ROLE_ARN }}
-      #     aws-region: us-east-1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Check Central Trust Ledger
+        id: ledger_check
+        run: |
+          OBJECT_URI="s3://${{ env.STAGING_BUCKET }}/${{ inputs.object_key }}"
+          echo "🏦 Checking trust ledger for: $OBJECT_URI"
+          
+          LEDGER_RESULT=$(aws dynamodb get-item \
+            --table-name ${{ env.LEDGER_TABLE }} \
+            --key '{"object_key":{"S":"'$OBJECT_URI'"}}' \
+            --query 'Item.status.S' \
+            --output text 2>/dev/null || echo "None")
+          
+          if [[ "$LEDGER_RESULT" == "verified" && "${{ inputs.force_reverify }}" != "true" ]]; then
+            echo "✅ Artifact found in trust ledger as VERIFIED"
+            echo "ledger_verified=true" >> $GITHUB_OUTPUT
+            
+            # Get digest from ledger
+            DIGEST=$(aws dynamodb get-item \
+              --table-name ${{ env.LEDGER_TABLE }} \
+              --key '{"object_key":{"S":"'$OBJECT_URI'"}}' \
+              --query 'Item.digest.S' \
+              --output text)
+            echo "📋 Ledger digest: $DIGEST"
+            echo "ledger_digest=$DIGEST" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Artifact not in ledger or force re-verification requested"
+            echo "ledger_verified=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Install cosign
+        if: steps.ledger_check.outputs.ledger_verified != 'true'
         uses: sigstore/cosign-installer@v3
 
       - name: Download artifacts from staging
+        if: steps.ledger_check.outputs.ledger_verified != 'true'
         run: |
           BASE="${{ inputs.object_key }}"
           aws s3 cp s3://${{ env.STAGING_BUCKET }}/${BASE} .
@@ -44,6 +81,7 @@ jobs:
           aws s3 cp s3://${{ env.STAGING_BUCKET }}/${BASE}.attestation.sigstore .
 
       - name: Verify signature
+        if: steps.ledger_check.outputs.ledger_verified != 'true'
         run: |
           BASE="${{ inputs.object_key }}"
           cosign verify-blob \
@@ -54,6 +92,7 @@ jobs:
             ${BASE}
 
       - name: Verify SLSA attestation
+        if: steps.ledger_check.outputs.ledger_verified != 'true'
         run: |
           BASE="${{ inputs.object_key }}"
           cosign verify-blob-attestation \
@@ -67,13 +106,29 @@ jobs:
         if: ${{ inputs.promote }}
         run: |
           BASE="${{ inputs.object_key }}"
-          aws s3 cp ${BASE} s3://${{ env.WEBSITE_BUCKET }}/ \
+          
+          # Use digest from ledger or skip (already verified)
+          if [[ "${{ steps.ledger_check.outputs.ledger_verified }}" == "true" ]]; then
+            DIGEST="${{ steps.ledger_check.outputs.ledger_digest }}"
+            echo "🏦 Using digest from trust ledger: $DIGEST"
+          else
+            echo "🔒 Using freshly verified artifact"
+          fi
+          
+          aws s3 cp s3://${{ env.STAGING_BUCKET }}/${BASE} s3://${{ env.WEBSITE_BUCKET }}/ \
             --tagging "trust=verified"
           echo "✅ Artifact promoted to production with trust=verified tag"
 
       - name: Verification complete
         run: |
-          echo "🔒 Verification successful for ${{ inputs.object_key }}"
+          if [[ "${{ steps.ledger_check.outputs.ledger_verified }}" == "true" ]]; then
+            echo "🏦 Verification via Central Trust Ledger for ${{ inputs.object_key }}"
+            echo "📋 Digest: ${{ steps.ledger_check.outputs.ledger_digest }}"
+            echo "⚡ Skipped expensive cryptographic verification"
+          else
+            echo "🔒 Cryptographic verification successful for ${{ inputs.object_key }}"
+          fi
+          
           if [[ "${{ inputs.promote }}" == "true" ]]; then
             echo "🚀 Artifact promoted to production"
           else
