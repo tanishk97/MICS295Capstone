@@ -32,11 +32,11 @@ jobs:
       contents: read
     
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.ROLE_ARN }}
-          aws-region: us-east-1
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ env.ROLE_ARN }}
+      #     aws-region: us-east-1
 
       - name: Check Central Trust Ledger
         id: ledger_check
