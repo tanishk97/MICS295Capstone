@@ -14,13 +14,13 @@ on:
         type: boolean
 
 env:
-  STAGING_BUCKET: <REPLACE_WITH_STAGING_BUCKET>
-  WEBSITE_BUCKET: <REPLACE_WITH_WEBSITE_BUCKET>
+  STAGING_BUCKET: mics295-pipeline-artifacts
+  WEBSITE_BUCKET: mics295-capstone-website
   ROLE_ARN: <REPLACE_WITH_ROLE_ARN>
 
 jobs:
   verify-promote:
-    runs-on: ubuntu-latest
+    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
     permissions:
       id-token: write
       contents: read
