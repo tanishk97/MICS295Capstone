@@ -1,0 +1,82 @@
+name: Verify with SalsaG CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: 'Artifact to verify (e.g., dist.tgz)'
+        required: true
+        type: string
+      promote:
+        description: 'Promote to production after verification'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  verify-with-salsag:
+    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      run: |
+        python3 -m pip install --upgrade pip
+        
+    - name: Install SalsaG CLI
+      run: |
+        echo "📦 Installing SalsaG CLI..."
+        cd salsag-cli
+        pip install -e .
+        salsaG --version
+        
+    - name: Create SalsaG Configuration
+      run: |
+        echo "⚙️ Creating SalsaG configuration..."
+        cat > salsag.yml << EOF
+        aws:
+          region: us-east-1
+          staging_bucket: mics295-pipeline-artifacts
+          ledger_table: trust-ledger
+        EOF
+        
+    - name: 🔍 Verify with SalsaG
+      id: verify
+      run: |
+        echo "🏦 Verifying artifact with SalsaG CLI..."
+        if salsaG verify --artifact "${{ inputs.artifact_name }}" --config ./salsag.yml; then
+          echo "verification_status=verified" >> $GITHUB_OUTPUT
+          echo "✅ Artifact verified successfully!"
+        else
+          echo "verification_status=failed" >> $GITHUB_OUTPUT
+          echo "❌ Artifact verification failed!"
+          exit 1
+        fi
+        
+    - name: Show Trust Ledger Status
+      run: |
+        echo "📊 Trust Ledger Status:"
+        salsaG status --config ./salsag.yml
+        
+    - name: Promote to Production
+      if: ${{ inputs.promote && steps.verify.outputs.verification_status == 'verified' }}
+      run: |
+        echo "🚀 Promoting verified artifact to production..."
+        aws s3 cp s3://mics295-pipeline-artifacts/${{ inputs.artifact_name }} \
+          s3://mics295-capstone-website/ \
+          --tagging "trust=verified&source=salsag-cli"
+        echo "✅ Artifact promoted to production!"
+        
+    - name: Verification Summary
+      run: |
+        echo "🔒 SalsaG CLI Verification Complete"
+        echo "📋 Artifact: ${{ inputs.artifact_name }}"
+        echo "✅ Status: ${{ steps.verify.outputs.verification_status }}"
+        if [[ "${{ inputs.promote }}" == "true" && "${{ steps.verify.outputs.verification_status }}" == "verified" ]]; then
+          echo "🚀 Promoted to production"
+        else
+          echo "📋 Verification only - no promotion"
+        fi

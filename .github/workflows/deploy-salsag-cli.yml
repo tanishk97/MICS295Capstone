@@ -1,0 +1,80 @@
+name: CI/CD Pipeline with SalsaG CLI
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - '**.html'
+      - '**.css'
+      - '**.js'
+      - 'salsag.yml'
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  ci-with-salsag:
+    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      run: |
+        python3 -m pip install --upgrade pip
+        
+    - name: Install SalsaG CLI
+      run: |
+        echo "📦 Installing SalsaG CLI..."
+        cd salsag-cli
+        pip install -e .
+        salsaG --version
+        
+    - name: Install cosign
+      run: |
+        echo "🔐 Installing cosign..."
+        curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+        sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+        sudo chmod +x /usr/local/bin/cosign
+        cosign version
+        
+    - name: Run Tests
+      run: |
+        echo "🧪 Running tests..."
+        # Add your test commands here
+        
+    - name: Build Application
+      run: |
+        echo "🏗️ Building static website..."
+        mkdir -p dist
+        cp index.html dist/
+        # Copy any other static assets
+        if [ -d "assets" ]; then cp -r assets dist/; fi
+        if [ -d "css" ]; then cp -r css dist/; fi
+        if [ -d "js" ]; then cp -r js dist/; fi
+        ls -la dist/
+        
+    - name: 🚀 SalsaG Trust Pipeline
+      run: |
+        echo "🔒 Starting SalsaG Trust Pipeline..."
+        salsaG start --artifact ./dist
+        
+    - name: Legacy Pipeline Compatibility
+      run: |
+        echo "📦 Creating legacy zip for existing pipeline..."
+        zip -r website.zip . -x "*.git*" "*.github*" "*.DS_Store*" "pipeline.yml" "*.md" "*.sh" "salsag-cli/*"
+        
+    - name: Upload to Pipeline Artifacts (Legacy)
+      run: |
+        echo "☁️ Uploading to legacy pipeline bucket..."
+        aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
+        
+    - name: Trigger CodePipeline (Legacy)
+      run: |
+        echo "🔄 Triggering legacy CodePipeline..."
+        aws codepipeline start-pipeline-execution --name mics295-pipeline
+        
+    - name: Pipeline Summary
+      run: |
+        echo "✅ Pipeline completed successfully!"
+        echo "🔒 SalsaG: Artifacts signed and recorded in trust ledger"
+        echo "📦 Legacy: CodePipeline triggered for backward compatibility"
