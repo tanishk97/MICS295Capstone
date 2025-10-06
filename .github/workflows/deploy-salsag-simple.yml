@@ -1,0 +1,98 @@
+name: CI/CD Pipeline with SalsaG Simple
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  ci-with-salsag-simple:
+    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+    - uses: actions/checkout@v4
+        
+    - name: Build Application
+      run: |
+        echo "🏗️ Building static website..."
+        mkdir -p dist
+        cp index.html dist/
+        ls -la dist/
+        
+    - name: 📦 Package Artifact (SalsaG Style)
+      run: |
+        echo "📦 Packaging artifact..."
+        tar -czf dist.tgz -C dist .
+        echo "✅ Created dist.tgz"
+        
+    - name: 📋 Generate Simple SBOM
+      run: |
+        echo "📋 Generating SBOM..."
+        cat > sbom.spdx.json << EOF
+        {
+          "spdxVersion": "SPDX-2.3",
+          "dataLicense": "CC0-1.0",
+          "SPDXID": "SPDXRef-DOCUMENT",
+          "name": "SBOM for dist",
+          "documentNamespace": "https://salsag.example.com/dist",
+          "creationInfo": {
+            "created": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "creators": ["Tool: SalsaG Simple"]
+          }
+        }
+        EOF
+        echo "✅ SBOM generated"
+        
+    - name: 📜 Create Simple Provenance
+      run: |
+        echo "📜 Creating provenance..."
+        cat > provenance.json << EOF
+        {
+          "builder": {"id": "https://github.com/salsag/simple"},
+          "buildType": "https://github.com/salsag/simple",
+          "metadata": {
+            "buildStartedOn": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "completeness": {"parameters": true}
+          }
+        }
+        EOF
+        echo "✅ Provenance created"
+        
+    - name: ☁️ Upload to S3 (SalsaG Style)
+      run: |
+        echo "☁️ Uploading artifacts..."
+        aws s3 cp dist.tgz s3://mics295-pipeline-artifacts/
+        aws s3 cp sbom.spdx.json s3://mics295-pipeline-artifacts/
+        aws s3 cp provenance.json s3://mics295-pipeline-artifacts/
+        echo "✅ Artifacts uploaded"
+        
+    - name: 📊 Record in Trust Ledger
+      run: |
+        echo "📊 Recording in trust ledger..."
+        DIGEST="sha256:$(sha256sum dist.tgz | cut -d' ' -f1)"
+        aws dynamodb put-item \
+          --table-name trust-ledger \
+          --item '{
+            "object_key": {"S": "s3://mics295-pipeline-artifacts/dist.tgz"},
+            "status": {"S": "verified"},
+            "digest": {"S": "'$DIGEST'"},
+            "timestamp": {"S": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"},
+            "details": {"S": "Processed by SalsaG Simple Pipeline"}
+          }'
+        echo "✅ Recorded in ledger with digest: $DIGEST"
+        
+    - name: Legacy Pipeline Compatibility
+      run: |
+        echo "📦 Creating legacy zip..."
+        zip -r website.zip . -x "*.git*" "*.github*" "*.DS_Store*" "*.yml" "*.md" "salsag-cli/*"
+        aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
+        aws codepipeline start-pipeline-execution --name mics295-pipeline
+        
+    - name: 🎉 Pipeline Summary
+      run: |
+        echo "🎉 SalsaG Simple Pipeline completed!"
+        echo "📦 Artifact: dist.tgz"
+        echo "📋 SBOM: sbom.spdx.json" 
+        echo "📜 Provenance: provenance.json"
+        echo "🏦 Recorded in trust ledger"
+        echo "🔄 Legacy pipeline triggered"
