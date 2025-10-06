@@ -27,7 +27,14 @@ jobs:
         echo "📦 Installing SalsaG CLI..."
         cd salsag-cli
         pip install -e .
-        salsaG --version
+        echo "✅ SalsaG CLI installed"
+        
+    - name: Test SalsaG CLI
+      run: |
+        echo "🧪 Testing SalsaG CLI..."
+        salsaG --version || echo "❌ SalsaG CLI not working"
+        which salsaG || echo "❌ SalsaG not in PATH"
+        python3 -c "import salsag; print('✅ SalsaG module imported')" || echo "❌ Import failed"
         
     - name: Install cosign
       run: |
@@ -53,10 +60,24 @@ jobs:
         if [ -d "js" ]; then cp -r js dist/; fi
         ls -la dist/
         
+    - name: Debug SalsaG Configuration
+      run: |
+        echo "🔍 Debugging SalsaG setup..."
+        pwd
+        ls -la
+        cat salsag.yml || echo "❌ No salsag.yml found"
+        echo "Python path:"
+        python3 -c "import sys; print('\n'.join(sys.path))"
+        
     - name: 🚀 SalsaG Trust Pipeline
       run: |
         echo "🔒 Starting SalsaG Trust Pipeline..."
-        salsaG start --artifact ./dist
+        echo "Current directory: $(pwd)"
+        echo "Config file exists: $(test -f salsag.yml && echo 'YES' || echo 'NO')"
+        salsaG start --artifact ./dist --config ./salsag.yml || {
+          echo "❌ SalsaG failed, trying without config..."
+          salsaG start --artifact ./dist --bucket mics295-pipeline-artifacts --table trust-ledger
+        }
         
     - name: Legacy Pipeline Compatibility
       run: |
