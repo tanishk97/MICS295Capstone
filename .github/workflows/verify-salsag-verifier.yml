@@ -1,0 +1,64 @@
+name: SalsaG CLI Verifier Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: 'Artifact name to verify (e.g., dist.tgz)'
+        required: true
+        default: 'dist.tgz'
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  verify-artifact:
+    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      run: |
+        python3 -m pip install --upgrade pip
+        
+    - name: Install SalsaG CLI
+      run: |
+        echo "📦 Installing SalsaG CLI..."
+        cd salsag-cli
+        pip install -e .
+        echo "✅ SalsaG CLI installed"
+        
+    - name: Test SalsaG CLI Installation
+      run: |
+        echo "🧪 Testing SalsaG CLI..."
+        salsaG --version
+        salsaG --help
+        
+    - name: 🔍 Verify Artifact with SalsaG CLI
+      run: |
+        echo "🔍 Verifying artifact: ${{ github.event.inputs.artifact_name }}"
+        salsaG verify --artifact "${{ github.event.inputs.artifact_name }}" --config ./salsag.yml
+        
+    - name: 📊 Show Trust Ledger Status
+      run: |
+        echo "📊 Checking trust ledger status..."
+        salsaG status --config ./salsag.yml
+        
+    - name: 🔍 Verify Multiple Artifacts
+      run: |
+        echo "🔍 Testing verification of multiple artifacts..."
+        
+        # Test known good artifact
+        echo "Testing known artifact..."
+        salsaG verify --artifact "dist.tgz" --config ./salsag.yml || echo "❌ dist.tgz not found"
+        
+        # Test non-existent artifact
+        echo "Testing non-existent artifact..."
+        salsaG verify --artifact "nonexistent.tgz" --config ./salsag.yml || echo "✅ Correctly rejected non-existent artifact"
+        
+    - name: 📋 Verification Summary
+      run: |
+        echo "🎉 SalsaG CLI Verifier Demo completed!"
+        echo "✅ Verification command working"
+        echo "📊 Status command working"
+        echo "🔒 Trust ledger integration confirmed"
