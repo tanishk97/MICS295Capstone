@@ -131,6 +131,7 @@ def verify(artifact, config):
         else:
             console.print(f"❌ Artifact NOT VERIFIED", style="red bold")
             console.print(f"🚫 Status: {result.get('status', 'Not found')}")
+            sys.exit(1)  # Exit with error code when verification fails
             
     except Exception as e:
         console.print(f"❌ Verification failed: {e}", style="red")
