@@ -120,17 +120,18 @@ def verify(artifact, config):
             console=console,
         ) as progress:
             
-            task = progress.add_task("🏦 Checking trust ledger...", total=None)
-            result = core.verify_from_ledger(artifact)
+            task = progress.add_task("🏦 Comprehensive verification...", total=None)
+            result = core.verify_artifact_comprehensive(artifact)
             progress.update(task, description="✅ Verification complete")
         
-        if result['verified']:
+        if result['overall_verified']:
             console.print(f"✅ Artifact VERIFIED", style="green bold")
-            console.print(f"📋 Digest: {result['digest']}")
-            console.print(f"🕐 Timestamp: {result['timestamp']}")
+            for detail in result['details']:
+                console.print(f"  {detail}")
         else:
             console.print(f"❌ Artifact NOT VERIFIED", style="red bold")
-            console.print(f"🚫 Status: {result.get('status', 'Not found')}")
+            for detail in result['details']:
+                console.print(f"  {detail}")
             sys.exit(1)  # Exit with error code when verification fails
             
     except Exception as e:
