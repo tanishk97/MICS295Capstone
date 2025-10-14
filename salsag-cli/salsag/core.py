@@ -161,12 +161,20 @@ class SalsaGCore:
         
         if not dry_run:
             for file_type, file_path in files_to_upload.items():
-                key = file_path.name
+                if file_type in ['signature', 'certificate', 'attestation']:
+                    # Store cosign files in /cosign folder
+                    key = f"cosign/{file_path.name}"
+                else:
+                    key = file_path.name
                 self.s3.upload_file(str(file_path), bucket, key)
                 s3_urls[file_type] = f"s3://{bucket}/{key}"
         else:
             for file_type, file_path in files_to_upload.items():
-                s3_urls[file_type] = f"s3://{bucket}/{file_path.name}"
+                if file_type in ['signature', 'certificate', 'attestation']:
+                    key = f"cosign/{file_path.name}"
+                else:
+                    key = file_path.name
+                s3_urls[file_type] = f"s3://{bucket}/{key}"
         
         return s3_urls
     
