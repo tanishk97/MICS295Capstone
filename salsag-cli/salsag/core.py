@@ -137,7 +137,6 @@ class SalsaGCore:
                     'cosign', 'sign-blob', '--yes',
                     '--output-signature', str(signature_files['signature']),
                     '--output-certificate', str(signature_files['certificate']),
-                    '--insecure-ignore-tlog',
                     str(artifact_path)
                 ]
                 
