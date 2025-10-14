@@ -135,6 +135,7 @@ class SalsaGCore:
                 # Attempt cosign signing
                 cmd_sign = [
                     'cosign', 'sign-blob', '--yes',
+                    '--bundle', str(signature_files['signature']) + '.bundle',
                     '--output-signature', str(signature_files['signature']),
                     '--output-certificate', str(signature_files['certificate']),
                     str(artifact_path)
