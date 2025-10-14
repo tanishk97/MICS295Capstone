@@ -297,8 +297,13 @@ class SalsaGCore:
                                 sha256_hash.update(chunk)
                         
                         calculated_digest = sha256_hash.hexdigest()
+                        stored_digest = ledger_result['digest']
                         
-                        if calculated_digest == ledger_result['digest']:
+                        # Remove sha256: prefix if present for comparison
+                        if stored_digest.startswith('sha256:'):
+                            stored_digest = stored_digest[7:]
+                        
+                        if calculated_digest == stored_digest:
                             verification_results['checksum_verified'] = True
                             verification_results['details'].append("✅ Checksum verification passed")
                         else:
