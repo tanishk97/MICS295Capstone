@@ -88,6 +88,16 @@ Resources:
                 S3ObjectKey: website.zip
               OutputArtifacts:
                 - Name: SourceOutput
+        - Name: Approval
+          Actions:
+            - Name: ManualApproval
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Provider: Manual
+                Version: '1'
+              Configuration:
+                CustomData: 'Please review the changes before deployment'
         - Name: Deploy
           Actions:
             - Name: DeployAction
