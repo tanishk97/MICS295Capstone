@@ -203,7 +203,7 @@ class SalsaGCore:
         return ledger_entry
     
     def verify_from_ledger(self, artifact_name: str) -> Dict[str, Any]:
-        """Verify artifact from trust ledger"""
+        """Verify artifact from trust ledger with checksum validation"""
         
         # Construct S3 URI
         bucket = self.config['aws']['staging_bucket']
@@ -214,12 +214,28 @@ class SalsaGCore:
             
             if 'Item' in response:
                 item = response['Item']
-                return {
-                    'verified': item['status'] == 'verified',
-                    'digest': item.get('digest'),
-                    'timestamp': item.get('timestamp'),
-                    'details': item.get('details')
-                }
+                if item['status'] == 'verified':
+                    # Download artifact and verify checksum
+                    import tempfile
+                    with tempfile.NamedTemporaryFile() as tmp_file:
+                        self.s3.download_file(bucket, artifact_name, tmp_file.name)
+                        actual_hash = f"sha256:{self._calculate_sha256(Path(tmp_file.name))}"
+                        expected_hash = item.get('digest')
+                        
+                        if actual_hash == expected_hash:
+                            return {
+                                'verified': True,
+                                'digest': expected_hash,
+                                'timestamp': item.get('timestamp'),
+                                'details': item.get('details')
+                            }
+                        else:
+                            return {
+                                'verified': False,
+                                'status': f'Checksum mismatch: expected {expected_hash}, got {actual_hash}'
+                            }
+                else:
+                    return {'verified': False, 'status': 'Marked as failed in ledger'}
             else:
                 return {'verified': False, 'status': 'Not found in ledger'}
                 
