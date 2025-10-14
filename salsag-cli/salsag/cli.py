@@ -120,18 +120,17 @@ def verify(artifact, config):
             console=console,
         ) as progress:
             
-            task = progress.add_task("🏦 Comprehensive verification...", total=None)
+            task = progress.add_task("🔍 Verifying artifact integrity...", total=None)
             result = core.verify_artifact_comprehensive(artifact)
-            progress.update(task, description="✅ Verification complete")
+            progress.remove_task(task)
         
         if result['overall_verified']:
             console.print(f"✅ Artifact VERIFIED", style="green bold")
-            for detail in result['details']:
-                console.print(f"  {detail}")
         else:
-            console.print(f"❌ Artifact NOT VERIFIED", style="red bold")
+            console.print(f"❌ Artifact VERIFICATION FAILED", style="red bold")
             for detail in result['details']:
-                console.print(f"  {detail}")
+                if "failed" in detail.lower() or "❌" in detail:
+                    console.print(f"  {detail}")
             sys.exit(1)  # Exit with error code when verification fails
             
     except Exception as e:
