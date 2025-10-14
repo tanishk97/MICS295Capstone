@@ -80,7 +80,23 @@ jobs:
           salsaG start --artifact ./dist --bucket mics295-pipeline-artifacts --table trust-ledger
         }
         
+    - name: Legacy Pipeline Compatibility
+      run: |
+        echo "📦 Creating legacy zip for existing pipeline..."
+        zip -r website.zip . -x "*.git*" "*.github*" "*.DS_Store*" "pipeline.yml" "*.md" "*.sh" "salsag-cli/*"
+        
+    - name: Upload to Pipeline Artifacts (Legacy)
+      run: |
+        echo "☁️ Uploading to legacy pipeline bucket..."
+        aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
+        
+    - name: Trigger CodePipeline (Legacy)
+      run: |
+        echo "🔄 Triggering legacy CodePipeline..."
+        aws codepipeline start-pipeline-execution --name mics295-pipeline
+        
     - name: Pipeline Summary
       run: |
         echo "✅ Pipeline completed successfully!"
         echo "🔒 SalsaG: Artifacts signed and recorded in trust ledger"
+        echo "📦 Legacy: CodePipeline triggered manually"
