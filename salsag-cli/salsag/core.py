@@ -31,8 +31,8 @@ class SalsaGCore:
             base_dir = artifact_path.parent
             files = [artifact_path.name]
         else:
-            # Directory - create tarball with all contents
-            tarball_name = f"{artifact_path.name}.tgz"
+            # Directory - always create index.tgz for deployment pipeline
+            tarball_name = "index.tgz"
             base_dir = artifact_path
             files = ["."]
         

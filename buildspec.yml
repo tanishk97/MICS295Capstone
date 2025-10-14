@@ -20,7 +20,7 @@ phases:
     commands:
       - echo "Starting deployment phase"
       - ls -la
-      - echo "🔍 Verifying dist.tgz with SalsaG CLI..."
+      - echo "🔍 Verifying index.tgz with SalsaG CLI..."
       - |
         # Create salsag.yml config file
         cat > salsag.yml << EOF
@@ -30,18 +30,18 @@ phases:
           ledger_table: trust-ledger
         EOF
       - |
-        if salsaG verify --artifact dist.tgz --config salsag.yml; then
-          echo "✅ dist.tgz verification PASSED - proceeding with deployment"
+        if salsaG verify --artifact index.tgz --config salsag.yml; then
+          echo "✅ index.tgz verification PASSED - proceeding with deployment"
         else
-          echo "❌ dist.tgz verification FAILED - stopping deployment"
+          echo "❌ index.tgz verification FAILED - stopping deployment"
           exit 1
         fi
   build:
     commands:
-      - echo "🔒 Downloading VERIFIED dist.tgz for deployment..."
-      - aws s3 cp s3://mics295-pipeline-artifacts/dist.tgz ./verified-dist.tgz
+      - echo "🔒 Downloading VERIFIED index.tgz for deployment..."
+      - aws s3 cp s3://mics295-pipeline-artifacts/index.tgz ./verified-index.tgz
       - echo "📦 Extracting verified content..."
-      - tar -xzf verified-dist.tgz
+      - tar -xzf verified-index.tgz
       - echo "🚀 Deploying ONLY verified content to S3..."
       - aws s3 cp index.html s3://mics295-capstone-website/index.html
   post_build:
