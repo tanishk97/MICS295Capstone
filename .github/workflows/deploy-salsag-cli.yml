@@ -39,11 +39,9 @@ jobs:
         
     - name: Install cosign
       run: |
-        echo "🔐 Installing cosign..."
-        curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
-        sudo mv cosign-linux-amd64 /usr/local/bin/cosign
-        sudo chmod +x /usr/local/bin/cosign
-        cosign version
+        curl -sL "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64" -o cosign-linux-amd64 2>/dev/null
+        sudo mv cosign-linux-amd64 /usr/local/bin/cosign 2>/dev/null
+        sudo chmod +x /usr/local/bin/cosign 2>/dev/null
         
     - name: Run Tests
       run: |
