@@ -10,8 +10,11 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .core import SalsaGCore
 from .config import load_config
+from .telemetry import get_tracer, trace
 
 console = Console()
+
+tracer = get_tracer(__name__)
 
 @click.group()
 @click.version_option(version="1.0.0")
@@ -32,7 +35,6 @@ def start(artifact, config, bucket, table, dry_run):
     """🚀 Start trust pipeline: sign, attest, and store artifact"""
     
     console.print(Panel.fit("🔒 SalsaG Trust Pipeline", style="bold blue"))
-    
     # Load configuration
     try:
         cfg = load_config(config)
@@ -40,6 +42,7 @@ def start(artifact, config, bucket, table, dry_run):
             cfg['aws']['staging_bucket'] = bucket
         if table:
             cfg['aws']['ledger_table'] = table
+         
     except Exception as e:
         console.print(f"❌ Config error: {e}", style="red")
         sys.exit(1)
