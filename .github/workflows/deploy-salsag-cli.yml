@@ -15,7 +15,7 @@ env:
 
 jobs:
   ci-with-salsag:
-    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: codebuild-Mics295Pipeline-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
     - uses: actions/checkout@v4
     
