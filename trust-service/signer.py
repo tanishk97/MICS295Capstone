@@ -9,14 +9,16 @@ import hashlib
 from pathlib import Path
 from datetime import datetime
 
-s3 = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb')
-
+# Get environment variables
 KMS_KEY_ID = os.environ.get('KMS_KEY_ID')
 LEDGER_TABLE = os.environ.get('LEDGER_TABLE', 'trust-ledger')
 
 def handler(event, context):
     """Sign artifact with KMS and record in Rekor"""
+    
+    # Initialize boto3 clients inside handler with region
+    s3 = boto3.client('s3', region_name='us-east-1')
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     
     try:
         record = event['Records'][0]
@@ -56,10 +58,10 @@ def handler(event, context):
             print(f"📋 Rekor UUID: {rekor_uuid}")
             
             # Upload signatures
-            upload_signatures(bucket, key, sig_path, cert_path, bundle_path)
+            upload_signatures(s3, bucket, key, sig_path, cert_path, bundle_path)
             
             # Update ledger
-            update_ledger(bucket, key, sha256, rekor_uuid)
+            update_ledger(dynamodb, bucket, key, sha256, rekor_uuid)
             
         print("✅ Signing complete!")
         return {
@@ -112,7 +114,7 @@ def extract_rekor_uuid(bundle_path):
     
     return uuid
 
-def upload_signatures(bucket, artifact_key, sig_path, cert_path, bundle_path):
+def upload_signatures(s3, bucket, artifact_key, sig_path, cert_path, bundle_path):
     """Upload signatures to S3"""
     
     base_name = Path(artifact_key).name
@@ -123,7 +125,7 @@ def upload_signatures(bucket, artifact_key, sig_path, cert_path, bundle_path):
     
     print(f"📤 Uploaded signatures to cosign/")
 
-def update_ledger(bucket, key, sha256, rekor_uuid):
+def update_ledger(dynamodb, bucket, key, sha256, rekor_uuid):
     """Update DynamoDB"""
     
     table = dynamodb.Table(LEDGER_TABLE)

@@ -4,10 +4,8 @@ FROM public.ecr.aws/lambda/python:3.11
 RUN curl -sL "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64" -o /usr/local/bin/cosign && \
     chmod +x /usr/local/bin/cosign
 
-# Install boto3
-RUN pip install boto3
-
 # Copy function code
-COPY signer.py ${LAMBDA_TASK_ROOT}/
+COPY signer.py ${LAMBDA_TASK_ROOT}
 
-CMD ["signer.handler"]
+# Set the CMD to your handler
+CMD [ "signer.handler" ]
