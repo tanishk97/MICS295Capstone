@@ -125,34 +125,39 @@ class SalsaGCore:
         rekor_uuid = None
         bundle_path = str(signature_files['signature']) + '.bundle'
         
-        if not dry_run:
-            try:
-                # Attempt cosign signing with bundle output
-                cmd_sign = [
-                    'cosign', 'sign-blob', '--yes',
-                    '--bundle', bundle_path,
-                    '--output-signature', str(signature_files['signature']),
-                    '--output-certificate', str(signature_files['certificate']),
-                    str(artifact_path)
-                ]
-                
-                result = subprocess.run(cmd_sign, check=True, capture_output=True, text=True, timeout=30)
-                signature_files['attestation'].touch()
-                
-                # Try to extract Rekor UUID from bundle
-                rekor_uuid = self.rekor.extract_rekor_uuid_from_bundle(bundle_path)
-                
-                # If bundle extraction failed, search Rekor by hash
-                if not rekor_uuid:
-                    artifact_sha256 = self._calculate_sha256(artifact_path)
-                    rekor_uuid = self.rekor.get_latest_entry_for_hash(artifact_sha256)
-                
-            except Exception as e:
-                # Silently create empty placeholder files
-                print(f"⚠️  Signing failed: {e}")
-                for sig_file in signature_files.values():
-                    sig_file.touch()
-        else:
+        # Check if signing should be skipped (for CI environments using IAM roles)
+        skip_signing = self.config.get('skip_signing', False)
+        
+        if skip_signing or dry_run:
+            # Create empty placeholder files
+            for sig_file in signature_files.values():
+                sig_file.touch()
+            return signature_files, None
+        
+        # Attempt actual cosign signing
+        try:
+            cmd_sign = [
+                'cosign', 'sign-blob', '--yes',
+                '--bundle', bundle_path,
+                '--output-signature', str(signature_files['signature']),
+                '--output-certificate', str(signature_files['certificate']),
+                str(artifact_path)
+            ]
+            
+            result = subprocess.run(cmd_sign, check=True, capture_output=True, text=True, timeout=30)
+            signature_files['attestation'].touch()
+            
+            # Try to extract Rekor UUID from bundle
+            rekor_uuid = self.rekor.extract_rekor_uuid_from_bundle(bundle_path)
+            
+            # If bundle extraction failed, search Rekor by hash
+            if not rekor_uuid:
+                artifact_sha256 = self._calculate_sha256(artifact_path)
+                rekor_uuid = self.rekor.get_latest_entry_for_hash(artifact_sha256)
+            
+        except Exception as e:
+            # Silently create empty placeholder files
+            print(f"⚠️  Signing failed: {e}")
             for sig_file in signature_files.values():
                 sig_file.touch()
         
