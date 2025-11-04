@@ -26,7 +26,7 @@ phases:
         cat > salsag.yml << EOF
         aws:
           region: us-east-1
-          staging_bucket: mics295-pipeline-artifacts
+          staging_bucket: mics295-pipeline-artifacts-bucket
           ledger_table: trust-ledger
         EOF
       - |
@@ -39,7 +39,7 @@ phases:
   build:
     commands:
       - echo "🔒 Downloading VERIFIED index.tgz for deployment..."
-      - aws s3 cp s3://mics295-pipeline-artifacts/index.tgz ./verified-index.tgz
+      - aws s3 cp s3://mics295-pipeline-artifacts-bucket/index.tgz ./verified-index.tgz
       - echo "📦 Extracting verified content..."
       - tar -xzf verified-index.tgz
       - echo "🚀 Deploying ONLY verified content to S3..."
