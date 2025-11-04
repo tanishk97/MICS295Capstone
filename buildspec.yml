@@ -43,7 +43,7 @@ phases:
       - echo "📦 Extracting verified content..."
       - tar -xzf verified-index.tgz
       - echo "🚀 Deploying ONLY verified content to S3..."
-      - aws s3 cp index.html s3://mics295-capstone-website/index.html
+      - aws s3 cp index.html s3://mics295-capstone-website-bucket/index.html
   post_build:
     commands:
       - echo "Deployment completed successfully"
