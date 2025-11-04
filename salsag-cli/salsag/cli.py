@@ -80,7 +80,7 @@ def start(artifact, config, bucket, table, dry_run):
             
             # Step 4: Sign with cosign
             task4 = progress.add_task("🔐 Signing with cosign...", total=None)
-            signature_files = core.sign_artifact(tarball_path, dry_run)
+            signature_files, rekor_uuid = core.sign_artifact(tarball_path, dry_run)
             progress.update(task4, description="✅ Artifact signed")
             
             # Step 5: Upload to S3
@@ -90,7 +90,7 @@ def start(artifact, config, bucket, table, dry_run):
             
             # Step 6: Record in ledger
             task6 = progress.add_task("📊 Recording in ledger...", total=None)
-            ledger_entry = core.record_ledger(tarball_path, s3_urls, dry_run)
+            ledger_entry = core.record_ledger(tarball_path, s3_urls, rekor_uuid, dry_run)
             progress.update(task6, description="✅ Recorded in ledger")
             
         except Exception as e:

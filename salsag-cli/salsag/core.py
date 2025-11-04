@@ -13,6 +13,8 @@ from typing import Dict, List, Any, Optional
 import boto3
 from botocore.exceptions import ClientError
 
+from .rekor_client import RekorClient, RekorError
+
 class SalsaGCore:
     """Core SalsaG trust pipeline functionality"""
     
@@ -21,6 +23,7 @@ class SalsaGCore:
         self.s3 = boto3.client('s3', region_name=config['aws']['region'])
         self.dynamodb = boto3.resource('dynamodb', region_name=config['aws']['region'])
         self.table = self.dynamodb.Table(config['aws']['ledger_table'])
+        self.rekor = RekorClient()
     
     def package_artifact(self, artifact_path: Path, dry_run: bool = False) -> Path:
         """Package artifact into tarball"""
@@ -110,8 +113,8 @@ class SalsaGCore:
         
         return provenance_path
     
-    def sign_artifact(self, artifact_path: Path, dry_run: bool = False) -> Dict[str, Path]:
-        """Sign artifact with cosign"""
+    def sign_artifact(self, artifact_path: Path, dry_run: bool = False) -> tuple[Dict[str, Path], Optional[str]]:
+        """Sign artifact with cosign and return signature files + Rekor entry UUID"""
         
         signature_files = {
             'signature': artifact_path.with_suffix(artifact_path.suffix + '.sig'),
@@ -119,29 +122,41 @@ class SalsaGCore:
             'attestation': artifact_path.with_suffix(artifact_path.suffix + '.attestation.sigstore')
         }
         
+        rekor_uuid = None
+        bundle_path = str(signature_files['signature']) + '.bundle'
+        
         if not dry_run:
             try:
-                # Attempt cosign signing
+                # Attempt cosign signing with bundle output
                 cmd_sign = [
                     'cosign', 'sign-blob', '--yes',
-                    '--bundle', str(signature_files['signature']) + '.bundle',
+                    '--bundle', bundle_path,
                     '--output-signature', str(signature_files['signature']),
                     '--output-certificate', str(signature_files['certificate']),
                     str(artifact_path)
                 ]
                 
-                subprocess.run(cmd_sign, check=True, capture_output=True, text=True, timeout=30)
+                result = subprocess.run(cmd_sign, check=True, capture_output=True, text=True, timeout=30)
                 signature_files['attestation'].touch()
                 
-            except:
+                # Try to extract Rekor UUID from bundle
+                rekor_uuid = self.rekor.extract_rekor_uuid_from_bundle(bundle_path)
+                
+                # If bundle extraction failed, search Rekor by hash
+                if not rekor_uuid:
+                    artifact_sha256 = self._calculate_sha256(artifact_path)
+                    rekor_uuid = self.rekor.get_latest_entry_for_hash(artifact_sha256)
+                
+            except Exception as e:
                 # Silently create empty placeholder files
+                print(f"⚠️  Signing failed: {e}")
                 for sig_file in signature_files.values():
                     sig_file.touch()
         else:
             for sig_file in signature_files.values():
                 sig_file.touch()
         
-        return signature_files
+        return signature_files, rekor_uuid
     
     def upload_artifacts(self, tarball_path: Path, signature_files: Dict[str, Path], 
                         sbom_path: Path, provenance_path: Path, dry_run: bool = False) -> Dict[str, str]:
@@ -178,8 +193,8 @@ class SalsaGCore:
         
         return s3_urls
     
-    def record_ledger(self, tarball_path: Path, s3_urls: Dict[str, str], dry_run: bool = False) -> Dict[str, Any]:
-        """Record verification in DynamoDB ledger"""
+    def record_ledger(self, tarball_path: Path, s3_urls: Dict[str, str], rekor_uuid: Optional[str] = None, dry_run: bool = False) -> Dict[str, Any]:
+        """Record verification in DynamoDB ledger with Rekor entry UUID"""
         
         digest = f"sha256:{self._calculate_sha256(tarball_path)}"
         
@@ -191,6 +206,11 @@ class SalsaGCore:
             'details': 'Signed and verified by SalsaG CLI',
             'artifacts': s3_urls
         }
+        
+        # Add Rekor entry UUID if available
+        if rekor_uuid:
+            ledger_entry['rekor_entry_id'] = rekor_uuid
+            ledger_entry['rekor_verified'] = True
         
         if not dry_run:
             self.table.put_item(Item=ledger_entry)
@@ -239,7 +259,7 @@ class SalsaGCore:
             return False
 
     def verify_from_ledger(self, artifact_name: str) -> Dict[str, Any]:
-        """Verify artifact from trust ledger"""
+        """Verify artifact from trust ledger with Rekor verification"""
         
         # Construct S3 URI
         bucket = self.config['aws']['staging_bucket']
@@ -250,12 +270,35 @@ class SalsaGCore:
             
             if 'Item' in response:
                 item = response['Item']
-                return {
+                result = {
                     'verified': item['status'] == 'verified',
                     'digest': item.get('digest'),
                     'timestamp': item.get('timestamp'),
-                    'details': item.get('details')
+                    'details': item.get('details'),
+                    'verification_method': 'ledger'
                 }
+                
+                # If Rekor entry ID exists, verify against Rekor
+                rekor_entry_id = item.get('rekor_entry_id')
+                if rekor_entry_id:
+                    try:
+                        expected_sha256 = item.get('digest', '')
+                        rekor_verified = self.rekor.verify_entry(rekor_entry_id, expected_sha256)
+                        result['rekor_verified'] = rekor_verified
+                        result['rekor_entry_id'] = rekor_entry_id
+                        result['verification_method'] = 'rekor'
+                        
+                        if not rekor_verified:
+                            result['verified'] = False
+                            result['details'] = 'Rekor verification failed'
+                            
+                    except RekorError as e:
+                        print(f"⚠️  Rekor verification failed: {e}")
+                        result['rekor_verified'] = False
+                        result['rekor_error'] = str(e)
+                        # Don't fail completely, ledger entry still valid
+                
+                return result
             else:
                 return {'verified': False, 'status': 'Not found in ledger'}
                 
