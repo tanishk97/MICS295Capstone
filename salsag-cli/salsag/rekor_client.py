@@ -34,6 +34,19 @@ class RekorClient:
         except RequestException as e:
             raise RekorError(f"Failed to fetch Rekor entry: {e}")
     
+    def get_entry_by_log_index(self, log_index: str) -> Dict[str, Any]:
+        """Fetch Rekor entry by log index"""
+        url = f"{self.api_base}/log/entries?logIndex={log_index}"
+        
+        try:
+            response = requests.get(url, timeout=self.timeout)
+            response.raise_for_status()
+            return response.json()
+        except Timeout:
+            raise RekorError(f"Timeout fetching Rekor entry at index {log_index}")
+        except RequestException as e:
+            raise RekorError(f"Failed to fetch Rekor entry: {e}")
+    
     def search_by_hash(self, sha256_hash: str) -> List[str]:
         """Search Rekor for entries matching artifact SHA256 hash"""
         url = f"{self.api_base}/index/retrieve"
@@ -55,16 +68,24 @@ class RekorClient:
         except RequestException as e:
             raise RekorError(f"Failed to search Rekor: {e}")
     
-    def verify_entry(self, entry_uuid: str, expected_sha256: str) -> bool:
-        """Verify Rekor entry matches expected artifact SHA256"""
+    def verify_entry(self, entry_id: str, expected_sha256: str) -> bool:
+        """Verify Rekor entry matches expected artifact SHA256
+        
+        entry_id can be either a UUID or a log index (numeric string)
+        """
         try:
-            entry_data = self.get_entry(entry_uuid)
+            # Check if entry_id is numeric (log index) or UUID
+            if entry_id.isdigit():
+                entry_data = self.get_entry_by_log_index(entry_id)
+            else:
+                entry_data = self.get_entry(entry_id)
             
-            # Extract the entry (Rekor returns dict with UUID as key)
-            if entry_uuid not in entry_data:
-                raise RekorError(f"Entry {entry_uuid} not found in response")
+            # Extract the first entry (Rekor returns dict with UUID/index as key)
+            if not entry_data:
+                raise RekorError(f"Entry {entry_id} not found")
             
-            entry = entry_data[entry_uuid]
+            # Get the first entry value
+            entry = list(entry_data.values())[0]
             
             # Decode the body (base64 encoded)
             body_encoded = entry.get('body')

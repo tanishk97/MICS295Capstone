@@ -27,16 +27,16 @@ phases:
           --yes \
           artifact.tgz
       
-      - echo "Extracting Rekor UUID from bundle..."
+      - echo "Extracting Rekor log index from bundle..."
       - cat artifact.tgz.bundle | jq '.'
-      - REKOR_UUID=$(cat artifact.tgz.bundle | jq -r '.Bundle.Payload.logEntry.logID // .rekorBundle.Payload.logEntry.logID // empty')
-      - echo "Rekor UUID - $REKOR_UUID"
+      - REKOR_LOG_INDEX=$(cat artifact.tgz.bundle | jq -r '.verificationMaterial.tlogEntries[0].logIndex // empty')
+      - echo "Rekor Log Index - $REKOR_LOG_INDEX"
       - |
-        if [ -z "$REKOR_UUID" ] || [ "$REKOR_UUID" = "null" ]; then
-          echo "⚠️  No Rekor UUID found, using bundle hash as identifier"
-          REKOR_UUID=$(sha256sum artifact.tgz.bundle | awk '{print $1}')
+        if [ -z "$REKOR_LOG_INDEX" ] || [ "$REKOR_LOG_INDEX" = "null" ]; then
+          echo "⚠️  No Rekor log index found, using bundle hash as identifier"
+          REKOR_LOG_INDEX=$(sha256sum artifact.tgz.bundle | awk '{print $1}')
         fi
-      - echo "Final Rekor ID - $REKOR_UUID"
+      - echo "Final Rekor Log Index - $REKOR_LOG_INDEX"
       
   post_build:
     commands:
@@ -52,7 +52,7 @@ phases:
             \"object_key\": {\"S\": \"s3://$BUCKET_NAME/$ARTIFACT_KEY\"},
             \"status\": {\"S\": \"verified\"},
             \"digest\": {\"S\": \"sha256:$ARTIFACT_SHA256\"},
-            \"rekor_entry_id\": {\"S\": \"$REKOR_UUID\"},
+            \"rekor_entry_id\": {\"S\": \"$REKOR_LOG_INDEX\"},
             \"rekor_verified\": {\"BOOL\": true},
             \"timestamp\": {\"S\": \"$TIMESTAMP\"},
             \"details\": {\"S\": \"Signed by CodeBuild with KMS\"},
@@ -61,5 +61,5 @@ phases:
       
       - echo "✅ Signing complete!"
       - echo "Artifact - $ARTIFACT_KEY"
-      - echo "Rekor ID - $REKOR_UUID"
+      - echo "Rekor Log Index - $REKOR_LOG_INDEX"
       - echo "SHA256 - $ARTIFACT_SHA256"
