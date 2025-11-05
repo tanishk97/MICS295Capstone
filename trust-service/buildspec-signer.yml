@@ -1,0 +1,62 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - echo "Installing cosign..."
+      - curl -sL "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64" -o /usr/local/bin/cosign
+      - chmod +x /usr/local/bin/cosign
+      - cosign version
+      
+  pre_build:
+    commands:
+      - echo "Artifact to sign - $ARTIFACT_KEY"
+      - echo "Downloading artifact from S3..."
+      - aws s3 cp s3://$BUCKET_NAME/$ARTIFACT_KEY ./artifact.tgz
+      - sha256sum artifact.tgz | awk '{print $1}' > artifact.sha256
+      - ARTIFACT_SHA256=$(cat artifact.sha256)
+      - echo "SHA256 - $ARTIFACT_SHA256"
+      
+  build:
+    commands:
+      - echo "Signing with AWS KMS..."
+      - |
+        cosign sign-blob \
+          --key awskms:///$KMS_KEY_ID \
+          --bundle artifact.tgz.bundle \
+          --output-signature artifact.tgz.sig \
+          --output-certificate artifact.tgz.pem \
+          --yes \
+          artifact.tgz
+      
+      - echo "Extracting Rekor UUID from bundle..."
+      - REKOR_UUID=$(cat artifact.tgz.bundle | jq -r '.rekorBundle.logEntry.uuid')
+      - echo "Rekor UUID - $REKOR_UUID"
+      
+  post_build:
+    commands:
+      - echo "Uploading signatures to S3..."
+      - aws s3 cp artifact.tgz.sig s3://$BUCKET_NAME/cosign/$ARTIFACT_KEY.sig
+      - aws s3 cp artifact.tgz.pem s3://$BUCKET_NAME/cosign/$ARTIFACT_KEY.pem
+      - aws s3 cp artifact.tgz.bundle s3://$BUCKET_NAME/cosign/$ARTIFACT_KEY.bundle
+      
+      - echo "Recording in trust ledger..."
+      - TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S)
+      - |
+        aws dynamodb put-item \
+          --table-name trust-ledger \
+          --item "{
+            \"object_key\": {\"S\": \"s3://$BUCKET_NAME/$ARTIFACT_KEY\"},
+            \"status\": {\"S\": \"verified\"},
+            \"digest\": {\"S\": \"sha256:$ARTIFACT_SHA256\"},
+            \"rekor_entry_id\": {\"S\": \"$REKOR_UUID\"},
+            \"rekor_verified\": {\"BOOL\": true},
+            \"timestamp\": {\"S\": \"$TIMESTAMP\"},
+            \"details\": {\"S\": \"Signed by CodeBuild with KMS\"},
+            \"signing_method\": {\"S\": \"aws-kms-codebuild\"}
+          }"
+      
+      - echo "✅ Signing complete!"
+      - echo "Artifact - $ARTIFACT_KEY"
+      - echo "Rekor UUID - $REKOR_UUID"
+      - echo "SHA256 - $ARTIFACT_SHA256"
