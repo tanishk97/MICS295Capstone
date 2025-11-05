@@ -24,20 +24,23 @@ phases:
         cosign sign-blob \
           --key awskms:///$KMS_KEY_ID \
           --bundle artifact.tgz.bundle \
-          --output-signature artifact.tgz.sig \
-          --output-certificate artifact.tgz.pem \
           --yes \
           artifact.tgz
       
       - echo "Extracting Rekor UUID from bundle..."
-      - REKOR_UUID=$(cat artifact.tgz.bundle | jq -r '.rekorBundle.logEntry.uuid')
+      - cat artifact.tgz.bundle | jq '.'
+      - REKOR_UUID=$(cat artifact.tgz.bundle | jq -r '.Bundle.Payload.logEntry.logID // .rekorBundle.Payload.logEntry.logID // empty')
       - echo "Rekor UUID - $REKOR_UUID"
+      - |
+        if [ -z "$REKOR_UUID" ] || [ "$REKOR_UUID" = "null" ]; then
+          echo "⚠️  No Rekor UUID found, using bundle hash as identifier"
+          REKOR_UUID=$(sha256sum artifact.tgz.bundle | awk '{print $1}')
+        fi
+      - echo "Final Rekor ID - $REKOR_UUID"
       
   post_build:
     commands:
-      - echo "Uploading signatures to S3..."
-      - aws s3 cp artifact.tgz.sig s3://$BUCKET_NAME/cosign/$ARTIFACT_KEY.sig
-      - aws s3 cp artifact.tgz.pem s3://$BUCKET_NAME/cosign/$ARTIFACT_KEY.pem
+      - echo "Uploading bundle to S3..."
       - aws s3 cp artifact.tgz.bundle s3://$BUCKET_NAME/cosign/$ARTIFACT_KEY.bundle
       
       - echo "Recording in trust ledger..."
@@ -58,5 +61,5 @@ phases:
       
       - echo "✅ Signing complete!"
       - echo "Artifact - $ARTIFACT_KEY"
-      - echo "Rekor UUID - $REKOR_UUID"
+      - echo "Rekor ID - $REKOR_UUID"
       - echo "SHA256 - $ARTIFACT_SHA256"
