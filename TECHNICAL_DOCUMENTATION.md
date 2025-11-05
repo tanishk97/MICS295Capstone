@@ -34,12 +34,13 @@ graph TB
     subgraph "AWS - CI/CD"
         CB1[CodeBuild Runner]
         S3S[S3 Staging Bucket]
-        EB[EventBridge]
         CB2[CodeBuild Signer]
         KMS[AWS KMS Key]
         DDB[DynamoDB Trust Ledger]
         CP[CodePipeline]
+        MA[Manual Approval]
         CB3[CodeBuild Deploy]
+        CB4[CodeBuild Verifier]
         S3W[S3 Website Bucket]
     end
     
@@ -51,17 +52,19 @@ graph TB
     REPO -->|trigger| GHA
     GHA -->|run on| CB1
     CB1 -->|upload artifact| S3S
-    S3S -->|event| EB
-    EB -->|trigger| CB2
+    CB1 -->|invoke| CB2
     CB2 -->|sign with| KMS
     CB2 -->|upload to| REKOR
     CB2 -->|record| DDB
     CB2 -->|upload bundle| S3S
     GHA -->|trigger| CP
-    CP -->|deploy| CB3
+    CP -->|wait| MA
+    MA -->|approve| CB3
     CB3 -->|verify from| DDB
-    CB3 -->|verify against| REKOR
+    CB3 -->|verify checksum| S3S
     CB3 -->|deploy to| S3W
+    CB4 -.->|standalone verify| DDB
+    CB4 -.->|standalone verify| S3S
 ```
 
 ### Technology Stack
@@ -71,11 +74,12 @@ graph TB
 | CI Pipeline | GitHub Actions | Build and package artifacts |
 | Runner | AWS CodeBuild | Self-hosted GitHub Actions runner |
 | Signing Service | AWS CodeBuild | Automated artifact signing |
+| Verifier Service | AWS CodeBuild | Standalone artifact verification |
 | Signing Key | AWS KMS | Cryptographic signing |
 | Transparency Log | Sigstore Rekor | Public, immutable audit trail |
 | Trust Ledger | AWS DynamoDB | Centralized verification registry |
-| Event Bus | AWS EventBridge | Event-driven automation |
 | CD Pipeline | AWS CodePipeline | Deployment orchestration |
+| Manual Gate | CodePipeline Approval | Human verification checkpoint |
 | Verification | SalsaG CLI | Custom verification tool |
 | Storage | AWS S3 | Artifact and website hosting |
 
@@ -114,13 +118,13 @@ graph TB
 
 **Project**: `salsag-artifact-signer`
 
-**Trigger**: S3 EventBridge notification on `*.tgz` upload
+**Trigger**: Invoked by SalsaG CLI during GitHub Actions workflow
 
 **BuildSpec**: `trust-service/buildspec-signer.yml`
 
 **Process Flow**:
 ```
-1. Receive S3 event with artifact key
+1. Invoked by salsaG start command
 2. Download artifact from S3
 3. Calculate SHA256 digest
 4. Sign with AWS KMS key
@@ -154,7 +158,43 @@ aws dynamodb put-item \
   }"
 ```
 
-### 3. AWS KMS Key
+### 3. CodeBuild Verifier Service
+
+**Project**: `salsag-artifact-verifier`
+
+**Trigger**: Manual invocation via AWS CLI or API
+
+**BuildSpec**: `trust-service/buildspec-verifier.yml`
+
+**Purpose**: Standalone artifact verification service
+
+**Process Flow**:
+```
+1. Receive artifact key as environment variable
+2. Download artifact from S3
+3. Query trust ledger for stored digest
+4. Calculate actual artifact SHA256
+5. Compare digests
+6. Return verification result (SUCCEEDED/FAILED)
+```
+
+**Usage**:
+```bash
+aws codebuild start-build \
+  --project-name salsag-artifact-verifier \
+  --environment-variables-override name=ARTIFACT_KEY,value=index.tgz
+```
+
+**Verification Logic**:
+- ✅ Trust ledger check: Artifact exists and status=verified
+- ✅ Checksum validation: Actual SHA256 matches stored digest
+- ⚠️ Cosign signatures: Optional (skipped if not present)
+
+**Exit Codes**:
+- `0` (SUCCEEDED): Verification passed
+- `1` (FAILED): Verification failed (tampering detected)
+
+### 4. AWS KMS Key
 
 **Key ID**: `e05bdb66-eeaf-455d-9783-2187c351066c`
 
@@ -486,6 +526,24 @@ Every artifact has a complete audit trail:
 6. **Verification**: CodeBuild logs
 7. **Deployment**: S3 access logs
 
+### Tampering Detection
+
+The system detects artifact tampering through checksum validation:
+
+**Scenario**: Artifact modified after signing (e.g., during manual approval)
+
+**Detection**:
+1. Verifier downloads artifact from S3
+2. Calculates actual SHA256 digest
+3. Compares with stored digest in trust ledger
+4. **Mismatch = Deployment blocked**
+
+**Test Results**:
+- ✅ Negative test: Tampered artifact → Verification FAILED
+- ✅ Positive test: Untampered artifact → Verification PASSED
+
+**Note**: EventBridge auto-signing disabled to prevent re-signing of tampered artifacts
+
 ---
 
 ## Implementation Details
@@ -498,7 +556,9 @@ MICS295Capstone/
 │   └── deploy-salsag-cli.yml          # CI pipeline
 ├── trust-service/
 │   ├── buildspec-signer.yml           # Signing service
-│   └── deploy-codebuild-signer.sh     # Deployment script
+│   ├── buildspec-verifier.yml         # Verifier service
+│   ├── deploy-codebuild-signer.sh     # Signer deployment
+│   └── deploy-verifier.sh             # Verifier deployment
 ├── salsag-cli/
 │   └── salsag/
 │       ├── rekor_client.py            # Rekor API client
@@ -696,11 +756,6 @@ echo "KMS Key ID: $KMS_KEY_ID"
 ```bash
 aws s3 mb s3://mics295-pipeline-artifacts-bucket --region us-east-1
 aws s3 mb s3://mics295-capstone-website-bucket --region us-east-1
-
-# Enable EventBridge notifications
-aws s3api put-bucket-notification-configuration \
-  --bucket mics295-pipeline-artifacts-bucket \
-  --notification-configuration '{"EventBridgeConfiguration": {}}'
 ```
 
 ### Step 3: Create DynamoDB Table
@@ -714,11 +769,15 @@ aws dynamodb create-table \
   --region us-east-1
 ```
 
-### Step 4: Deploy CodeBuild Signing Service
+### Step 4: Deploy CodeBuild Services
 
 ```bash
+# Deploy signing service
 cd trust-service
 ./deploy-codebuild-signer.sh
+
+# Deploy verifier service
+./deploy-verifier.sh
 ```
 
 ### Step 5: Configure GitHub Actions
@@ -782,11 +841,20 @@ Artifact not found in ledger
 ```
 **Solution**: Check if signing service completed successfully
 
+**4. Checksum verification failed**
+```
+❌ Checksum verification failed
+```
+**Solution**: Artifact was tampered with after signing - this is expected behavior for security
+
 ### Debug Commands
 
 ```bash
 # Check signing build logs
 aws logs tail /aws/codebuild/salsag-artifact-signer --follow
+
+# Check verifier build logs
+aws logs tail /aws/codebuild/salsag-artifact-verifier --follow
 
 # Check trust ledger
 aws dynamodb scan --table-name trust-ledger
@@ -796,6 +864,11 @@ curl "https://rekor.sigstore.dev/api/v1/log/entries?logIndex=<INDEX>"
 
 # Check verification logs
 aws logs tail /aws/codebuild/DeployBuild --follow
+
+# Test verifier service
+aws codebuild start-build \
+  --project-name salsag-artifact-verifier \
+  --environment-variables-override name=ARTIFACT_KEY,value=index.tgz
 ```
 
 ---
@@ -808,9 +881,15 @@ This supply chain security pipeline provides:
 ✅ **Public Transparency** - Rekor immutable log  
 ✅ **Centralized Trust** - DynamoDB ledger  
 ✅ **Automated Verification** - SalsaG CLI  
+✅ **Standalone Verifier** - CodeBuild verification service  
+✅ **Tampering Detection** - Checksum validation  
 ✅ **Zero-Trust Deployment** - Mandatory verification  
 ✅ **Complete Audit Trail** - Every step logged  
-✅ **Event-Driven** - Fully automated  
+✅ **Manual Approval Gate** - Human checkpoint before deployment  
+
+**Security Validated**:
+- Negative testing: Tampered artifacts blocked ✅
+- Positive testing: Clean artifacts deployed ✅
 ✅ **Production-Ready** - Tested end-to-end  
 
 **Total Implementation Time**: ~8 hours  
