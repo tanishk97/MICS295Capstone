@@ -124,13 +124,14 @@ def verify(artifact, config):
             result = core.verify_artifact_comprehensive(artifact)
             progress.remove_task(task)
         
+        # Show all verification details
+        for detail in result['details']:
+            console.print(f"  {detail}")
+        
         if result['overall_verified']:
             console.print(f"✅ Artifact VERIFIED", style="green bold")
         else:
             console.print(f"❌ Artifact VERIFICATION FAILED", style="red bold")
-            for detail in result['details']:
-                if "failed" in detail.lower() or "❌" in detail:
-                    console.print(f"  {detail}")
             sys.exit(1)  # Exit with error code when verification fails
             
     except Exception as e:
