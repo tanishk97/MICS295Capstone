@@ -49,6 +49,22 @@ jobs:
               --query 'Item.digest.S' \
               --output text)
             echo "📋 Ledger digest: $DIGEST"
+            
+            # Download artifact and compute actual SHA256
+            aws s3 cp "s3://${{ env.STAGING_BUCKET }}/${{ inputs.object_key }}" /tmp/artifact
+            ACTUAL_DIGEST="sha256:$(sha256sum /tmp/artifact | awk '{print $1}')"
+            echo "🔍 Actual digest: $ACTUAL_DIGEST"
+            
+            # Validate digest matches
+            if [[ "$DIGEST" != "$ACTUAL_DIGEST" ]]; then
+              echo "❌ DIGEST MISMATCH!"
+              echo "   Expected: $DIGEST"
+              echo "   Actual:   $ACTUAL_DIGEST"
+              echo "🚫 Verification FAILED - artifact has been tampered with"
+              exit 1
+            fi
+            echo "✅ Digest validation passed"
+            
             echo "ledger_digest=$DIGEST" >> $GITHUB_OUTPUT
             echo "verification_status=verified" >> $GITHUB_OUTPUT
           else
