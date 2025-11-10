@@ -1,5 +1,9 @@
 version: 0.2
 
+env:
+  variables:
+    COSIGN_EXPERIMENTAL: "1"  # Enable keyless signing
+
 phases:
   install:
     commands:
@@ -19,10 +23,9 @@ phases:
       
   build:
     commands:
-      - echo "Signing with AWS KMS..."
+      - echo "🔑 Signing with Sigstore keyless (no keys needed)..."
       - |
         cosign sign-blob \
-          --key awskms:///$KMS_KEY_ID \
           --bundle artifact.tgz.bundle \
           --yes \
           artifact.tgz
@@ -55,11 +58,11 @@ phases:
             \"rekor_entry_id\": {\"S\": \"$REKOR_LOG_INDEX\"},
             \"rekor_verified\": {\"BOOL\": true},
             \"timestamp\": {\"S\": \"$TIMESTAMP\"},
-            \"details\": {\"S\": \"Signed by CodeBuild with KMS\"},
-            \"signing_method\": {\"S\": \"aws-kms-codebuild\"}
+            \"details\": {\"S\": \"Signed with Sigstore keyless (OIDC identity-based)\"},
+            \"signing_method\": {\"S\": \"sigstore-keyless\"}
           }"
       
-      - echo "✅ Signing complete!"
+      - echo "✅ Keyless signing complete - no keys managed!"
       - echo "Artifact - $ARTIFACT_KEY"
       - echo "Rekor Log Index - $REKOR_LOG_INDEX"
       - echo "SHA256 - $ARTIFACT_SHA256"

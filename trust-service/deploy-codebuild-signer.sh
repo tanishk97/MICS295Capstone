@@ -1,20 +1,18 @@
 #!/bin/bash
-
 set -e
 
 REGION="us-east-1"
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 PROJECT_NAME="salsag-artifact-signer"
 BUCKET="mics295-pipeline-artifacts-bucket"
-KMS_KEY_ID="e05bdb66-eeaf-455d-9783-2187c351066c"
 
-echo "🚀 Deploying CodeBuild Signing Service"
+echo "🔐 Deploying SalsaG Keyless Signing Service..."
 
 # Create IAM role for CodeBuild
 echo "📝 Creating IAM role..."
 ROLE_NAME="codebuild-$PROJECT_NAME-role"
 
-cat > /tmp/trust-policy.json <<EOF
+cat > /tmp/trust-policy.json <<POLICY
 {
   "Version": "2012-10-17",
   "Statement": [{
@@ -23,15 +21,15 @@ cat > /tmp/trust-policy.json <<EOF
     "Action": "sts:AssumeRole"
   }]
 }
-EOF
+POLICY
 
 aws iam create-role \
   --role-name $ROLE_NAME \
   --assume-role-policy-document file:///tmp/trust-policy.json \
   2>/dev/null || echo "Role already exists"
 
-# Attach policies
-cat > /tmp/codebuild-policy.json <<EOF
+# Attach policies (removed KMS permissions)
+cat > /tmp/codebuild-policy.json <<POLICY
 {
   "Version": "2012-10-17",
   "Statement": [
@@ -47,104 +45,33 @@ cat > /tmp/codebuild-policy.json <<EOF
     },
     {
       "Effect": "Allow",
-      "Action": ["kms:Sign", "kms:GetPublicKey"],
-      "Resource": "arn:aws:kms:$REGION:$ACCOUNT_ID:key/$KMS_KEY_ID"
-    },
-    {
-      "Effect": "Allow",
       "Action": ["dynamodb:PutItem"],
       "Resource": "arn:aws:dynamodb:$REGION:$ACCOUNT_ID:table/trust-ledger"
     }
   ]
 }
-EOF
+POLICY
 
 aws iam put-role-policy \
   --role-name $ROLE_NAME \
   --policy-name ${PROJECT_NAME}-policy \
   --policy-document file:///tmp/codebuild-policy.json
 
-echo "✅ IAM role created"
+echo "✅ IAM role created (no KMS permissions needed)"
 sleep 5
 
-# Create CodeBuild project
-echo "🔨 Creating CodeBuild project..."
-
-cat > /tmp/codebuild-project.json <<EOF
-{
-  "name": "$PROJECT_NAME",
-  "source": {
-    "type": "NO_SOURCE",
-    "buildspec": "$(cat buildspec-signer.yml | sed 's/"/\\"/g' | tr '\n' ' ')"
-  },
-  "artifacts": {
-    "type": "NO_ARTIFACTS"
-  },
-  "environment": {
-    "type": "LINUX_CONTAINER",
-    "image": "aws/codebuild/standard:7.0",
-    "computeType": "BUILD_GENERAL1_SMALL",
-    "environmentVariables": [
-      {"name": "BUCKET_NAME", "value": "$BUCKET"},
-      {"name": "KMS_KEY_ID", "value": "$KMS_KEY_ID"}
-    ]
-  },
-  "serviceRole": "arn:aws:iam::$ACCOUNT_ID:role/$ROLE_NAME",
-  "timeoutInMinutes": 10
-}
-EOF
-
-aws codebuild create-project \
-  --cli-input-json file:///tmp/codebuild-project.json \
-  --region $REGION \
-  2>/dev/null || \
+# Update CodeBuild project
+echo "🔨 Updating CodeBuild project..."
 aws codebuild update-project \
   --name $PROJECT_NAME \
   --source type=NO_SOURCE,buildspec="$(cat buildspec-signer.yml)" \
-  --region $REGION
-
-echo "✅ CodeBuild project created"
-
-# Create EventBridge rule
-echo "📅 Creating EventBridge rule..."
-RULE_NAME="salsag-s3-trigger-codebuild"
-
-aws events put-rule \
-  --name $RULE_NAME \
-  --event-pattern "{
-    \"source\": [\"aws.s3\"],
-    \"detail-type\": [\"Object Created\"],
-    \"detail\": {
-      \"bucket\": {\"name\": [\"$BUCKET\"]},
-      \"object\": {\"key\": [{\"suffix\": \".tgz\"}]}
-    }
-  }" \
-  --state ENABLED \
-  --region $REGION
-
-# Add CodeBuild as target
-aws events put-targets \
-  --rule $RULE_NAME \
-  --targets "Id=1,Arn=arn:aws:codebuild:$REGION:$ACCOUNT_ID:project/$PROJECT_NAME,RoleArn=arn:aws:iam::$ACCOUNT_ID:role/service-role/Amazon_EventBridge_Invoke_CodeBuild,Input={\\\"environmentVariablesOverride\\\":[{\\\"name\\\":\\\"ARTIFACT_KEY\\\",\\\"value\\\":\\\"$.detail.object.key\\\"}]}" \
-  --region $REGION
-
-echo "✅ EventBridge rule created"
-
-# Enable S3 EventBridge notifications
-echo "🪣 Enabling S3 EventBridge notifications..."
-aws s3api put-bucket-notification-configuration \
-  --bucket $BUCKET \
-  --notification-configuration '{
-    "EventBridgeConfiguration": {}
-  }'
+  --environment type=LINUX_CONTAINER,image=aws/codebuild/standard:7.0,computeType=BUILD_GENERAL1_SMALL,environmentVariables="[{name=BUCKET_NAME,value=$BUCKET}]" \
+  --region $REGION \
+  2>/dev/null || echo "Project doesn't exist, will be created by salsaG CLI"
 
 echo ""
-echo "🎉 Deployment complete!"
+echo "✅ Keyless signing service deployed!"
+echo "📋 No keys to manage - uses Sigstore keyless signing"
 echo ""
-echo "📋 Summary:"
-echo "  Project: $PROJECT_NAME"
-echo "  KMS Key: $KMS_KEY_ID"
-echo "  Trigger: S3 EventBridge → CodeBuild"
-echo ""
-echo "🧪 Test by uploading a .tgz file:"
-echo "  aws s3 cp test.tgz s3://$BUCKET/"
+echo "To sign an artifact:"
+echo "  aws codebuild start-build --project-name $PROJECT_NAME --environment-variables-override name=ARTIFACT_KEY,value=index.tgz"
