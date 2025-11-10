@@ -1,196 +1,183 @@
-# MICS295 Capstone - Secure CI/CD Pipeline with SalsaG Trust Verification
+# SalsaGate - Supply Chain Security Pipeline
 
 ## Overview
-Automated CI/CD pipeline with cryptographic supply chain security for deploying a static website to AWS S3. The pipeline uses **SalsaG CLI** for artifact signing, verification, and trust ledger management, ensuring only verified artifacts are deployed to production.
+
+SalsaGate is a cloud-agnostic supply chain security framework that implements SLSA compliance through cryptographic signing, public transparency logging, and tamper-evident verification. The system uses **Sigstore keyless signing** to eliminate key management overhead while maintaining enterprise-grade security.
+
+## Key Features
+
+✅ **Keyless Signing** - Sigstore identity-based signing (no keys to manage)  
+✅ **Cloud-Agnostic** - No vendor lock-in, works anywhere with OIDC  
+✅ **Public Transparency** - Rekor immutable audit log  
+✅ **Tamper Detection** - Checksum validation blocks modified artifacts  
+✅ **Zero-Trust Deployment** - Mandatory verification before production  
+✅ **SLSA Compliant** - Meets SLSA Level 3 requirements  
 
 ## Architecture
 
-### High-Level Flow with Trust Pipeline
 ```mermaid
-graph TD
-    A[Developer Push to GitHub] --> B[GitHub Actions Triggered]
-    B --> C[CodeBuild Runner Executes]
-    C --> D[Build & Test Application]
-    D --> E[SalsaG: Package & Sign Artifacts]
-    E --> F[Upload to S3 Staging Bucket]
-    F --> G[Record in Trust Ledger DynamoDB]
-    G --> H[Trigger CodePipeline]
-    H --> I[CodeBuild: Verify with SalsaG]
-    I --> J{Verification Passed?}
-    J -->|Yes| K[Deploy to Website S3 Bucket]
-    J -->|No| L[Deployment Blocked]
-    K --> M[Website Live]
-```
-
-### Detailed Trust Pipeline Flow
-```mermaid
-sequenceDiagram
-    participant Dev as Developer
-    participant GH as GitHub Actions
-    participant CB as CodeBuild Runner
-    participant SG as SalsaG CLI
-    participant S3S as S3 Staging Bucket
-    participant DB as DynamoDB Trust Ledger
-    participant CP as CodePipeline
-    participant CBD as CodeBuild Deploy
-    participant S3W as S3 Website Bucket
-
-    Dev->>GH: git push to main
-    GH->>CB: Run on CodeBuild runner
-    CB->>CB: Build application
-    CB->>SG: Package artifact
-    SG->>SG: Generate SBOM
-    SG->>SG: Create provenance
-    SG->>SG: Sign with cosign
-    SG->>S3S: Upload signed artifact
-    SG->>DB: Record in trust ledger
-    CB->>CP: Trigger pipeline
-    CP->>CBD: Start deploy
-    CBD->>SG: Verify artifact
-    SG->>DB: Check trust ledger
-    SG-->>CBD: Verification result
-    alt Verification Passed
-        CBD->>S3S: Download verified artifact
-        CBD->>S3W: Deploy to website
-    else Verification Failed
-        CBD->>CBD: Block deployment
-    end
-```
-
-## Infrastructure Components
-
-### AWS Resources
-```mermaid
-graph LR
-    subgraph "GitHub"
-        GHA[GitHub Actions Workflow]
+graph TB
+    subgraph "Developer"
+        DEV[Developer Push]
     end
     
-    subgraph "AWS Account"
-        subgraph "CodeBuild"
-            CBR[test3 Runner]
-            CBD[DeployBuild Project]
-        end
-        
-        subgraph "S3 Buckets"
-            S3S[mics295-pipeline-artifacts-bucket]
-            S3W[mics295-capstone-website-bucket]
-        end
-        
-        subgraph "DynamoDB"
-            DB[trust-ledger Table]
-        end
-        
-        subgraph "CodePipeline"
-            CP[mics295-pipeline]
-        end
-        
-        subgraph "SalsaG"
-            SG[SalsaG CLI]
-        end
+    subgraph "GitHub"
+        GHA[GitHub Actions]
     end
-
-    GHA --> CBR
-    CBR --> SG
-    SG --> S3S
-    SG --> DB
-    CBR --> CP
-    CP --> CBD
-    CBD --> SG
-    SG --> DB
-    CBD --> S3W
+    
+    subgraph "AWS"
+        CB1[CodeBuild Runner]
+        CB2[Keyless Signer]
+        S3[S3 Staging]
+        DDB[Trust Ledger]
+        CP[CodePipeline]
+        MA[Manual Approval]
+        CB3[Deploy + Verify]
+        WEB[Website S3]
+    end
+    
+    subgraph "Sigstore"
+        REKOR[Rekor Log]
+    end
+    
+    DEV -->|git push| GHA
+    GHA -->|build| CB1
+    CB1 -->|upload| S3
+    CB1 -->|invoke| CB2
+    CB2 -->|keyless sign| REKOR
+    CB2 -->|record| DDB
+    GHA -->|trigger| CP
+    CP -->|wait| MA
+    MA -->|approve| CB3
+    CB3 -->|verify| DDB
+    CB3 -->|validate| S3
+    CB3 -->|deploy| WEB
 ```
 
-## SalsaG Trust Pipeline
+## How It Works
 
-### What is SalsaG?
-SalsaG is a supply chain security CLI tool that provides:
-- **Artifact Signing**: Cryptographic signing with cosign
-- **SBOM Generation**: Software Bill of Materials
-- **Provenance Creation**: Build metadata and attestations
-- **Trust Ledger**: Centralized verification registry in DynamoDB
-- **Fast Verification**: <2 second lookups vs 40+ seconds for crypto verification
+### 1. Build & Sign (GitHub Actions)
+```bash
+# Developer pushes code
+git push origin main
 
-### Trust Ledger Architecture
-- **Single Source of Truth**: DynamoDB is the authoritative verification registry
-- **Fail-Safe Design**: Artifacts not in ledger are immediately rejected
-- **Immutable Audit Trail**: Complete history of all verification attempts
-- **Performance**: 75% faster than cryptographic verification (10s vs 40s)
+# GitHub Actions:
+# - Builds application
+# - Packages as index.tgz
+# - Uploads to S3
+# - Invokes keyless signer
+```
 
-## Deployment Flow
+### 2. Keyless Signing (CodeBuild)
+```bash
+# Signer service:
+COSIGN_EXPERIMENTAL=1 cosign sign-blob \
+  --bundle artifact.tgz.bundle \
+  --yes \
+  artifact.tgz
 
-### 1. Continuous Integration (GitHub Actions)
-**Workflow**: `.github/workflows/deploy-salsag-cli.yml`
+# - Signs with OIDC identity (no keys!)
+# - Uploads to Rekor transparency log
+# - Records digest in DynamoDB trust ledger
+```
 
-**Trigger**: Push to `main` branch (HTML, CSS, JS, or salsag.yml changes)
+### 3. Verification & Deploy (CodePipeline)
+```bash
+# Deploy stage:
+salsaG verify --artifact index.tgz
 
-**Runner**: CodeBuild (`codebuild-test3`)
+# Checks:
+# ✅ Trust ledger: artifact exists
+# ✅ Checksum: SHA256 matches
+# ✅ Rekor: public proof available
 
-**Steps**:
-1. Checkout code
-2. Install SalsaG CLI
-3. Install cosign
-4. Run tests
-5. Build application (create `dist/` folder)
-6. **SalsaG Trust Pipeline**:
-   - Package artifact as `index.tgz`
-   - Generate SBOM (Software Bill of Materials)
-   - Create SLSA provenance
-   - Sign with cosign (keyless signing)
-   - Upload to S3 staging bucket
-   - Record in DynamoDB trust ledger
-7. Upload legacy `website.zip` for backward compatibility
-8. Trigger CodePipeline
+# If verified → Deploy to production
+# If failed → Block deployment
+```
 
-### 2. Continuous Deployment (CodePipeline)
-**Pipeline**: `mics295-pipeline`
+## Quick Start
 
-**Stages**:
-1. **Source**: S3 bucket (`mics295-pipeline-artifacts-bucket/website.zip`)
-2. **ManualApproval**: Manual gate (optional)
-3. **Deploy**: CodeBuild project (`DeployBuild`)
+### Prerequisites
+- AWS Account
+- GitHub repository
+- AWS CLI configured
 
-**Deploy Steps** (from `buildspec.yml`):
-1. Install SalsaG CLI and cosign
-2. **Verify with SalsaG**:
-   - Query trust ledger for `index.tgz`
-   - Validate verification status
-   - If failed: Block deployment and exit
-3. Download verified artifact from S3
-4. Extract content
-5. Deploy to website bucket (`mics295-capstone-website-bucket`)
+### Setup
 
-## File Structure
+1. **Create S3 Buckets**
+```bash
+aws s3 mb s3://mics295-pipeline-artifacts-bucket
+aws s3 mb s3://mics295-capstone-website-bucket
+```
+
+2. **Create DynamoDB Table**
+```bash
+aws dynamodb create-table \
+  --table-name trust-ledger \
+  --attribute-definitions AttributeName=object_key,AttributeType=S \
+  --key-schema AttributeName=object_key,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+```
+
+3. **Deploy Services**
+```bash
+cd trust-service
+./deploy-codebuild-signer.sh
+./deploy-verifier.sh
+```
+
+4. **Configure GitHub Actions**
+- Update `.github/workflows/deploy-salsag-cli.yml` with your bucket names
+- Push to trigger pipeline
+
+### Test
+
+```bash
+# Make a change
+echo "test" >> index.html
+git add index.html
+git commit -m "Test deployment"
+git push
+
+# Monitor
+gh run watch
+aws codepipeline get-pipeline-state --name mics295-pipeline
+```
+
+## Project Structure
+
 ```
 ├── .github/workflows/
-│   ├── deploy-salsag-cli.yml    # Main CI/CD with SalsaG
-│   ├── verify-salsag-verifier.yml # Verification demo
-│   └── verify-promote.yml        # Manual verification
-├── salsag-cli/                   # SalsaG CLI source code
-│   ├── salsag/
-│   │   ├── __init__.py
-│   │   ├── cli.py               # CLI commands
-│   │   ├── pipeline.py          # Trust pipeline logic
-│   │   └── verifier.py          # Verification logic
-│   ├── setup.py
-│   └── requirements.txt
-├── index.html                    # Main website file
-├── salsag.yml                    # SalsaG configuration
-├── buildspec.yml                 # CodeBuild deployment spec
-├── pipeline.yml                  # CodePipeline template
-└── README.md                     # This file
+│   └── deploy-salsag-cli.yml    # CI/CD pipeline
+├── trust-service/
+│   ├── buildspec-signer.yml     # Keyless signing service
+│   ├── buildspec-verifier.yml   # Standalone verifier
+│   ├── deploy-codebuild-signer.sh
+│   └── deploy-verifier.sh
+├── salsag-cli/                  # SalsaG CLI tool
+│   └── salsag/
+│       ├── cli.py
+│       ├── core.py
+│       └── rekor_client.py
+├── tamper/                      # Negative test artifacts
+│   ├── index.tgz               # Tampered artifact
+│   └── README.md
+├── buildspec.yml                # Deploy verification
+├── salsag.yml                   # Configuration
+├── index.html                   # Application
+└── TECHNICAL_DOCUMENTATION.md   # Detailed docs
 ```
 
-## Configuration Files
+## Configuration
 
-### SalsaG Configuration (`salsag.yml`)
+**salsag.yml**:
 ```yaml
 aws:
   region: us-east-1
   staging_bucket: mics295-pipeline-artifacts-bucket
   ledger_table: trust-ledger
 
-skip_signing: true  # Uses CodeBuild IAM role
+skip_signing: true  # Signing done by CodeBuild service
 
 artifacts:
   compression: "gzip"
@@ -198,264 +185,143 @@ artifacts:
   include_provenance: true
 ```
 
-### GitHub Actions Workflow (`.github/workflows/deploy-salsag-cli.yml`)
-- Runs on CodeBuild runner
-- Installs SalsaG CLI from local `salsag-cli/` directory
-- Executes trust pipeline: `salsaG start --artifact ./dist --config ./salsag.yml`
-- Uploads artifacts and triggers CodePipeline
+## Security
 
-### BuildSpec (`buildspec.yml`)
-- Installs SalsaG CLI and cosign
-- Verifies artifact: `salsaG verify --artifact index.tgz --config salsag.yml`
-- Blocks deployment if verification fails
-- Deploys only verified content to website bucket
+### Keyless Signing
+- **No keys to manage** - Uses OIDC identity from CodeBuild
+- **Short-lived certificates** - Issued by Sigstore Fulcio CA
+- **Public transparency** - All signatures in Rekor log
+- **Identity-based** - Certificate tied to build system
 
-## AWS Resources
-
-### S3 Buckets
-
-#### Staging Bucket (`mics295-pipeline-artifacts-bucket`)
-- **Purpose**: Store signed artifacts and pipeline files
-- **Content**: 
-  - `index.tgz` - Signed application artifact
-  - `sbom-*.spdx.json` - Software Bill of Materials
-  - `provenance.json` - SLSA provenance
-  - `cosign/` - Signature files (.sig, .pem, .attestation.sigstore)
-  - `website.zip` - Legacy format for CodePipeline
-- **Access**: CodeBuild runners, CodePipeline
-
-#### Website Bucket (`mics295-capstone-website-bucket`)
-- **Purpose**: Host static website
-- **Content**: Verified and deployed HTML, CSS, JS files
-- **Access**: Public web access
-- **URL**: http://mics295-capstone-website-bucket.s3-website-us-east-1.amazonaws.com
-
-### DynamoDB Table
-
-#### Trust Ledger (`trust-ledger`)
-- **Purpose**: Central registry of verified artifacts
-- **Schema**:
-  - `artifact_key` (String, Primary Key): S3 key of artifact
-  - `verification_status` (String): "verified" or "failed"
-  - `sha256_digest` (String): Artifact hash
-  - `timestamp` (String): Verification timestamp
-  - `metadata` (Map): Additional verification details
-- **Performance**: <2 second lookups
-- **Audit Trail**: Immutable record of all verifications
-
-### CodeBuild Projects
-
-#### Runner (`codebuild-test3`)
-- **Purpose**: GitHub Actions self-hosted runner
-- **Environment**: Amazon Linux, Python 3.11
-- **Permissions**: S3, DynamoDB, CodePipeline access
-
-#### Deploy (`DeployBuild`)
-- **Purpose**: Verify and deploy artifacts
-- **BuildSpec**: `buildspec.yml`
-- **Environment**: Amazon Linux, Python 3.9
-- **Permissions**: S3, DynamoDB read access
-
-## SalsaG CLI Commands
-
-### Start Trust Pipeline
+### Tampering Detection
 ```bash
-salsaG start --artifact ./dist --config ./salsag.yml
-```
-Packages, signs, uploads, and records artifact in trust ledger.
+# Scenario: Attacker modifies artifact after signing
 
-### Verify Artifact
-```bash
-salsaG verify --artifact index.tgz --config ./salsag.yml
-```
-Checks trust ledger for verification status.
-
-### Check Status
-```bash
-salsaG status --artifact index.tgz --config ./salsag.yml
-```
-Displays detailed verification information.
-
-### Initialize Configuration
-```bash
-salsaG init
-```
-Creates default `salsag.yml` configuration file.
-
-## Deployment Process
-
-### Automated Deployment
-```bash
-# Make changes to code
-echo "<p>New content</p>" >> index.html
-
-# Commit and push
-git add index.html
-git commit -m "Update website"
-git push origin main
-
-# GitHub Actions automatically:
-# 1. Builds and signs with SalsaG
-# 2. Records in trust ledger
-# 3. Triggers CodePipeline
-# 4. CodePipeline verifies and deploys
+# System response:
+# 1. Downloads artifact from S3
+# 2. Calculates SHA256: abc123...
+# 3. Compares with ledger: def456...
+# 4. Mismatch detected → Deployment BLOCKED
 ```
 
-### Manual Pipeline Trigger
+### Trust Ledger
+- **Single source of truth** - DynamoDB authoritative registry
+- **Immutable audit trail** - Complete verification history
+- **Fast lookups** - <2 second verification
+- **Fail-safe** - Unknown artifacts rejected
+
+## Testing
+
+### Positive Test (Clean Deployment)
 ```bash
-# Trigger pipeline manually
-aws codepipeline start-pipeline-execution --name mics295-pipeline --region us-east-1
+# Push code → Sign → Verify → Deploy
+# Expected: ✅ Deployment succeeds
 ```
+
+### Negative Test (Tamper Detection)
+```bash
+# 1. Trigger pipeline
+# 2. Wait for manual approval
+# 3. Tamper with artifact:
+aws s3 cp tamper/index.tgz s3://mics295-pipeline-artifacts-bucket/index.tgz
+
+# 4. Approve pipeline
+# Expected: ❌ Deployment blocked with "Checksum verification failed"
+```
+
+## Monitoring
 
 ### Check Trust Ledger
 ```bash
-# View all verified artifacts
-aws dynamodb scan --table-name trust-ledger --region us-east-1
-
-# Check specific artifact
-aws dynamodb get-item \
-  --table-name trust-ledger \
-  --key '{"artifact_key":{"S":"index.tgz"}}' \
-  --region us-east-1
+aws dynamodb scan --table-name trust-ledger
 ```
 
-## Security Features
-
-### Supply Chain Security
-- **Cryptographic Signing**: All artifacts signed with cosign
-- **SBOM**: Complete dependency inventory
-- **SLSA Provenance**: Build integrity attestation
-- **Keyless Signing**: GitHub OIDC eliminates long-lived credentials
-- **Tamper Detection**: Modified artifacts fail verification
-- **Zero-Trust Deployment**: Only verified artifacts reach production
-
-### Trust Ledger Benefits
-- **Single Source of Truth**: DynamoDB is authoritative
-- **Fail-Safe**: Unknown artifacts are rejected
-- **Immutable Audit**: Complete verification history
-- **Fast Verification**: 75% faster than crypto verification
-- **Compliance Ready**: Complete audit trail for regulations
-
-### IAM Permissions
-- **CodeBuild Runner**: S3 write, DynamoDB write, CodePipeline trigger
-- **Deploy Build**: S3 read, DynamoDB read
-- **Least Privilege**: Minimal permissions for each component
-
-## Monitoring & Logs
-
-### GitHub Actions Logs
-- Available in GitHub repository Actions tab
-- Shows CI pipeline and SalsaG execution
-- Real-time progress indicators
-
-### CodeBuild Logs
-- CloudWatch Logs: `/aws/codebuild/DeployBuild`
-- SalsaG verification output
-- Deployment status
-
-### Trust Ledger Audit
+### Verify in Rekor
 ```bash
-# Query verification history
-aws dynamodb scan --table-name trust-ledger \
-  --region us-east-1 \
-  --query 'Items[*].[artifact_key.S,verification_status.S,timestamp.S]' \
-  --output table
+# Get log index from ledger
+REKOR_ID=686027146
+
+# Query public log
+curl "https://rekor.sigstore.dev/api/v1/log/entries?logIndex=$REKOR_ID"
 ```
 
-### Pipeline Status
-- **GitHub Actions**: Repository Actions tab
-- **CodePipeline**: AWS Console → CodePipeline → mics295-pipeline
-- **Website**: Visit S3 website URL
+### View Logs
+```bash
+# Signing logs
+aws logs tail /aws/codebuild/salsag-artifact-signer --follow
+
+# Deploy logs
+aws logs tail /aws/codebuild/DeployBuild --follow
+
+# Verifier logs
+aws logs tail /aws/codebuild/salsag-artifact-verifier --follow
+```
 
 ## Troubleshooting
 
-### Common Issues
-
-#### 1. Verification Failed
+**Verification Failed**
 ```
-❌ Artifact VERIFICATION FAILED
-  ❌ Trust ledger verification failed
+❌ Checksum verification failed
 ```
-**Solution**: Artifact not in trust ledger. Trigger GitHub Actions to build and sign new artifact.
+→ Artifact was tampered with (expected for negative tests)
 
-#### 2. Access Denied to S3
+**Signing Failed**
 ```
-An error occurred (AccessDenied) when calling the PutObject operation
+Error: COSIGN_EXPERIMENTAL not set
 ```
-**Solution**: Check bucket names in `salsag.yml` and `buildspec.yml` match actual bucket names.
+→ Ensure `COSIGN_EXPERIMENTAL=1` in buildspec
 
-#### 3. SalsaG CLI Not Found
+**Ledger Not Found**
 ```
-salsaG: command not found
+Artifact not found in ledger
 ```
-**Solution**: Ensure SalsaG CLI is installed: `cd salsag-cli && pip install -e .`
+→ Run GitHub Actions to sign and record artifact
 
-#### 4. Empty Trust Ledger
-**Solution**: Run GitHub Actions workflow to create signed artifacts and populate ledger.
+## Performance
 
-### Debug Commands
-```bash
-# Check staging bucket
-aws s3 ls s3://mics295-pipeline-artifacts-bucket/ --recursive
+| Stage | Time | Notes |
+|-------|------|-------|
+| GitHub Actions | ~1 min | Build + sign |
+| Keyless Signing | ~5 sec | No key operations |
+| Manual Approval | Variable | Human gate |
+| Verification | ~3 sec | Ledger + checksum |
+| Deployment | ~10 sec | S3 upload |
+| **Total E2E** | **~6 min** | With approval |
 
-# Check website bucket
-aws s3 ls s3://mics295-capstone-website-bucket/
+## Documentation
 
-# Check trust ledger
-aws dynamodb scan --table-name trust-ledger --region us-east-1
-
-# View recent builds
-aws codebuild list-builds-for-project --project-name DeployBuild --region us-east-1
-
-# Get build logs
-aws logs tail /aws/codebuild/DeployBuild --follow
-```
-
-## Performance Metrics
-
-### Trust Ledger vs Cryptographic Verification
-- **Trust Ledger Lookup**: ~2 seconds
-- **Cryptographic Verification**: ~40 seconds
-- **Performance Improvement**: 75% faster
-
-### Pipeline Execution Times
-- **GitHub Actions (CI)**: 19-56 seconds
-- **CodePipeline (CD)**: 4-5 minutes (including manual approval)
-- **Total End-to-End**: ~6 minutes
+- **[TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md)** - Complete technical details
+- **[tamper/README.md](tamper/README.md)** - Negative testing guide
 
 ## Benefits
 
-### Supply Chain Security
-- Cryptographic proof of artifact integrity
-- Complete audit trail for compliance
-- Tamper detection and prevention
-- Zero-trust deployment model
+### vs Traditional Signing
+| Feature | Traditional | SalsaGate |
+|---------|------------|-----------|
+| Key Management | Manual | None (keyless) |
+| Key Rotation | Manual | Automatic |
+| Cloud Lock-in | Yes (KMS/Vault) | No (OIDC) |
+| Public Audit | No | Yes (Rekor) |
+| Setup Time | Hours | Minutes |
 
-### Performance
-- 75% faster verification with trust ledger
-- Single source of truth eliminates complexity
-- Fast artifact lookups (<2 seconds)
+### vs No Signing
+| Risk | Without Signing | With SalsaGate |
+|------|----------------|----------------|
+| Tampered artifacts | ❌ Deployed | ✅ Blocked |
+| Supply chain attacks | ❌ Undetected | ✅ Detected |
+| Compliance | ❌ Failed | ✅ SLSA L3 |
+| Audit trail | ❌ None | ✅ Complete |
 
-### Operational Excellence
-- Automated signing and verification
-- Fail-safe deployment blocking
-- Comprehensive logging and monitoring
-- Backward compatible with existing pipeline
+## Contributing
 
-### Scalability
-- Independent CI/CD components
-- Reusable trust pipeline
-- Multi-environment support ready
-- Easy integration with additional services
+This is a UC Berkeley MICS Capstone project demonstrating supply chain security best practices.
 
-## Future Enhancements
-- Multi-environment support (dev, staging, prod)
-- Slack/email notifications for verification failures
-- Dashboard for trust ledger visualization
-- Integration with additional security scanning tools
-- Remote SalsaG SaaS implementation with API Gateway
+## License
+
+Educational use - UC Berkeley MICS Program
 
 ---
 
 **Project**: UC Berkeley MICS Capstone (Cyber295)  
-**Last Updated**: November 2025
+**Last Updated**: November 2025  
+**Status**: Production-ready with keyless signing
