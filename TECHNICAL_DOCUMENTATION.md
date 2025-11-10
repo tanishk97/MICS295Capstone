@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document describes a production-ready supply chain security pipeline that provides cryptographic verification of software artifacts using AWS KMS signing and Sigstore Rekor transparency logs. The system ensures that only verified, signed artifacts are deployed to production, implementing zero-trust security principles.
+This document describes a production-ready supply chain security pipeline that provides cryptographic verification of software artifacts using Sigstore keyless signing and Rekor transparency logs. The system ensures that only verified, signed artifacts are deployed to production, implementing zero-trust security principles with no cloud vendor lock-in.
 
 ## Table of Contents
 
@@ -35,7 +35,6 @@ graph TB
         CB1[CodeBuild Runner]
         S3S[S3 Staging Bucket]
         CB2[CodeBuild Signer]
-        KMS[AWS KMS Key]
         DDB[DynamoDB Trust Ledger]
         CP[CodePipeline]
         MA[Manual Approval]
@@ -53,8 +52,7 @@ graph TB
     GHA -->|run on| CB1
     CB1 -->|upload artifact| S3S
     CB1 -->|invoke| CB2
-    CB2 -->|sign with| KMS
-    CB2 -->|upload to| REKOR
+    CB2 -->|sign keyless| REKOR
     CB2 -->|record| DDB
     CB2 -->|upload bundle| S3S
     GHA -->|trigger| CP
@@ -75,7 +73,7 @@ graph TB
 | Runner | AWS CodeBuild | Self-hosted GitHub Actions runner |
 | Signing Service | AWS CodeBuild | Automated artifact signing |
 | Verifier Service | AWS CodeBuild | Standalone artifact verification |
-| Signing Key | AWS KMS | Cryptographic signing |
+| Signing Method | Sigstore Keyless | Identity-based cryptographic signing |
 | Transparency Log | Sigstore Rekor | Public, immutable audit trail |
 | Trust Ledger | AWS DynamoDB | Centralized verification registry |
 | CD Pipeline | AWS CodePipeline | Deployment orchestration |
@@ -127,7 +125,7 @@ graph TB
 1. Invoked by salsaG start command
 2. Download artifact from S3
 3. Calculate SHA256 digest
-4. Sign with AWS KMS key
+4. Sign with Sigstore keyless (OIDC identity)
 5. Upload signature to Rekor
 6. Extract Rekor log index from bundle
 7. Upload bundle to S3
@@ -136,9 +134,8 @@ graph TB
 
 **Key Code**:
 ```bash
-# Sign with KMS
-cosign sign-blob \
-  --key awskms:///$KMS_KEY_ID \
+# Keyless signing (no keys needed)
+COSIGN_EXPERIMENTAL=1 cosign sign-blob \
   --bundle artifact.tgz.bundle \
   --yes \
   artifact.tgz
@@ -194,24 +191,30 @@ aws codebuild start-build \
 - `0` (SUCCEEDED): Verification passed
 - `1` (FAILED): Verification failed (tampering detected)
 
-### 4. AWS KMS Key
+### 4. Sigstore Keyless Signing
 
-**Key ID**: `e05bdb66-eeaf-455d-9783-2187c351066c`
+**Method**: Identity-based signing via OIDC
 
-**Type**: ECC_NIST_P256 (Asymmetric signing key)
+**How it works**:
+- No keys to create, manage, or rotate
+- Uses OIDC identity from CodeBuild/GitHub
+- Fulcio CA issues short-lived certificates
+- Ephemeral keys used for signing
+- Certificate + signature uploaded to Rekor
 
-**Usage**: 
-- Cosign uses KMS for signing operations
-- No private key exposure
-- AWS manages key security
-- Audit trail via CloudTrail
+**Benefits**:
+- Zero key management overhead
+- Cloud-agnostic (works anywhere with OIDC)
+- Automatic certificate rotation
+- Identity tied to build system
+- Public audit trail via Rekor
 
-**Permissions Required**:
-- `kms:Sign` - Sign artifacts
-- `kms:GetPublicKey` - Retrieve public key
-- `kms:DescribeKey` - Get key metadata
+**Environment Variable**:
+```bash
+COSIGN_EXPERIMENTAL=1  # Enables keyless signing
+```
 
-### 4. Rekor Transparency Log
+### 5. Rekor Transparency Log
 
 **Service**: Sigstore Rekor (https://rekor.sigstore.dev)
 
@@ -321,7 +324,6 @@ sequenceDiagram
     participant S3S as S3 Staging
     participant EB as EventBridge
     participant CB2 as CodeBuild Signer
-    participant KMS as AWS KMS
     participant Rekor as Rekor Log
     participant DDB as Trust Ledger
     participant CP as CodePipeline
@@ -373,7 +375,7 @@ flowchart TD
     B --> C[Trigger CodeBuild Signer]
     C --> D[Download artifact from S3]
     D --> E[Calculate SHA256 digest]
-    E --> F[Sign with AWS KMS]
+    E --> F[Sign with Sigstore keyless]
     F --> G{Signing successful?}
     
     G -->|Yes| H[Extract Rekor log index from bundle]
@@ -482,8 +484,8 @@ graph TD
 ### Defense in Depth Layers
 
 1. **Layer 1: Cryptographic Signing**
-   - AWS KMS signing
-   - Private key never exposed
+   - Sigstore keyless signing
+   - Identity-based (no keys to compromise)
    - Signature cryptographically verifiable
 
 2. **Layer 2: Public Transparency Log**
@@ -735,30 +737,15 @@ hash_value = body['spec']['data']['hash']['value']
 - AWS Account with appropriate permissions
 - GitHub repository
 - AWS CLI configured
-- Docker installed (for local testing)
 
-### Step 1: Create KMS Key
-
-```bash
-KMS_KEY_ID=$(aws kms create-key \
-  --key-usage SIGN_VERIFY \
-  --key-spec ECC_NIST_P256 \
-  --description "SalsaG artifact signing key" \
-  --region us-east-1 \
-  --query 'KeyMetadata.KeyId' \
-  --output text)
-
-echo "KMS Key ID: $KMS_KEY_ID"
-```
-
-### Step 2: Create S3 Buckets
+### Step 1: Create S3 Buckets
 
 ```bash
 aws s3 mb s3://mics295-pipeline-artifacts-bucket --region us-east-1
 aws s3 mb s3://mics295-capstone-website-bucket --region us-east-1
 ```
 
-### Step 3: Create DynamoDB Table
+### Step 2: Create DynamoDB Table
 
 ```bash
 aws dynamodb create-table \
@@ -769,7 +756,7 @@ aws dynamodb create-table \
   --region us-east-1
 ```
 
-### Step 4: Deploy CodeBuild Services
+### Step 3: Deploy CodeBuild Services
 
 ```bash
 # Deploy signing service
@@ -780,11 +767,11 @@ cd trust-service
 ./deploy-verifier.sh
 ```
 
-### Step 5: Configure GitHub Actions
+### Step 4: Configure GitHub Actions
 
 Update `.github/workflows/deploy-salsag-cli.yml` with your bucket names and trigger the workflow.
 
-### Step 6: Test End-to-End
+### Step 5: Test End-to-End
 
 ```bash
 # Make a change
@@ -877,7 +864,8 @@ aws codebuild start-build \
 
 This supply chain security pipeline provides:
 
-✅ **Cryptographic Signing** - AWS KMS integration  
+✅ **Keyless Signing** - Sigstore identity-based signing (no keys to manage)  
+✅ **Cloud-Agnostic** - No vendor lock-in, works anywhere with OIDC  
 ✅ **Public Transparency** - Rekor immutable log  
 ✅ **Centralized Trust** - DynamoDB ledger  
 ✅ **Automated Verification** - SalsaG CLI  
@@ -890,6 +878,7 @@ This supply chain security pipeline provides:
 **Security Validated**:
 - Negative testing: Tampered artifacts blocked ✅
 - Positive testing: Clean artifacts deployed ✅
+- No AWS KMS dependency ✅
 ✅ **Production-Ready** - Tested end-to-end  
 
 **Total Implementation Time**: ~8 hours  
