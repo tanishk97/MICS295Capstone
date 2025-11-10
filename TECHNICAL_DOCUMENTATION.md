@@ -254,7 +254,7 @@ Attributes:
   - rekor_verified (Boolean): true
   - timestamp (String): ISO 8601
   - details (String): Description
-  - signing_method (String): "aws-kms-codebuild"
+  - signing_method (String): "sigstore-keyless"
 ```
 
 **Example Entry**:
@@ -262,11 +262,11 @@ Attributes:
 {
   "object_key": "s3://bucket/index.tgz",
   "status": "verified",
-  "digest": "sha256:3d1255ab94910f23...",
-  "rekor_entry_id": "669060851",
+  "digest": "sha256:bd506670225a157bcc69757e600b037250ffb9e431532f8ee426e7685507461b",
+  "rekor_entry_id": "686027146",
   "rekor_verified": true,
-  "timestamp": "2025-11-05T01:03:01",
-  "signing_method": "aws-kms-codebuild"
+  "timestamp": "2025-11-10T03:23:07",
+  "signing_method": "sigstore-keyless"
 }
 ```
 
@@ -342,8 +342,7 @@ sequenceDiagram
     
     CB2->>S3S: Download artifact
     CB2->>CB2: Calculate SHA256
-    CB2->>KMS: Sign artifact
-    KMS-->>CB2: Return signature
+    CB2->>CB2: Sign keyless (OIDC)
     CB2->>Rekor: Upload signature
     Rekor-->>CB2: Return log index
     CB2->>S3S: Upload bundle
@@ -450,7 +449,7 @@ graph LR
         DDB --> DIGEST[digest: sha256:...]
         DDB --> REKOR[rekor_entry_id: log index]
         DDB --> TIME[timestamp: ISO 8601]
-        DDB --> METHOD[signing_method: aws-kms]
+        DDB --> METHOD[signing_method: sigstore-keyless]
     end
     
     subgraph "Verification Flow"
@@ -514,7 +513,7 @@ graph TD
 | **Compromised Rekor** | Trust ledger provides fallback verification |
 | **Man-in-the-Middle** | HTTPS + signature verification |
 | **Replay Attack** | Timestamps + unique SHA256 digests |
-| **Key Compromise** | KMS key rotation + audit trail |
+| **Key Compromise** | No keys to compromise (keyless signing) |
 
 ### Audit Trail
 
@@ -599,11 +598,6 @@ artifacts:
       "Effect": "Allow",
       "Action": ["s3:GetObject", "s3:PutObject"],
       "Resource": "arn:aws:s3:::mics295-pipeline-artifacts-bucket/*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"],
-      "Resource": "arn:aws:kms:us-east-1:*:key/*"
     },
     {
       "Effect": "Allow",
@@ -810,19 +804,13 @@ aws codepipeline list-pipeline-executions --pipeline-name mics295-pipeline
 
 ### Common Issues
 
-**1. Signing fails with KMS permission error**
-```
-Error: AccessDeniedException: kms:DescribeKey
-```
-**Solution**: Add `kms:DescribeKey` to IAM role policy
-
-**2. Rekor verification returns 404**
+**1. Rekor verification returns 404**
 ```
 404 Client Error: Not Found for url: https://rekor.sigstore.dev/...
 ```
 **Solution**: Ensure using log index (numeric) not hash
 
-**3. Trust ledger entry not found**
+**2. Trust ledger entry not found**
 ```
 Artifact not found in ledger
 ```
