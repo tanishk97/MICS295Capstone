@@ -866,7 +866,6 @@ This supply chain security pipeline provides:
 **Security Validated**:
 - Negative testing: Tampered artifacts blocked ✅
 - Positive testing: Clean artifacts deployed ✅
-- No AWS KMS dependency ✅
 ✅ **Production-Ready** - Tested end-to-end  
 
 **Total Implementation Time**: ~8 hours  

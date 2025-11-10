@@ -300,7 +300,7 @@ Artifact not found in ledger
 |---------|------------|-----------|
 | Key Management | Manual | None (keyless) |
 | Key Rotation | Manual | Automatic |
-| Cloud Lock-in | Yes (KMS/Vault) | No (OIDC) |
+| Cloud Lock-in | Yes | No (OIDC) |
 | Public Audit | No | Yes (Rekor) |
 | Setup Time | Hours | Minutes |
 

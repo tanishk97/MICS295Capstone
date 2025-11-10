@@ -4,7 +4,7 @@
 November 9, 2025
 
 ## Test Objective
-Validate complete supply chain security pipeline with Sigstore keyless signing (no AWS KMS dependency).
+Validate complete supply chain security pipeline with Sigstore keyless signing.
 
 ## Test Scenarios
 
@@ -119,17 +119,6 @@ Reason: exit status 1
 | Deployment | 10s | S3 upload |
 | **Total E2E** | **~6 min** | With approval |
 
-## Key Improvements vs KMS
-
-| Metric | AWS KMS | Keyless |
-|--------|---------|---------|
-| Setup Time | 30 min | 5 min |
-| Key Management | Manual | None |
-| Signing Time | 2-3s | 1-2s |
-| Cloud Lock-in | Yes | No |
-| Key Rotation | Manual | Automatic |
-| Public Audit | No | Yes (Rekor) |
-
 ## Security Validation
 
 ### ✅ Cryptographic Signing
@@ -197,5 +186,3 @@ The keyless signing implementation provides:
 - **Tamper detection** - Checksum validation blocks modifications
 - **SLSA compliance** - Meets Level 3 requirements
 - **Production-ready** - Fully automated E2E pipeline
-
-**No AWS KMS dependency** - Complete vendor independence achieved! 🎉

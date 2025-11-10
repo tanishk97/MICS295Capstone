@@ -19,7 +19,7 @@
 ### Key Design Decisions
 
 **✅ Sigstore Keyless Signing** (Nov 9, 2025)
-- **Why**: Eliminate AWS KMS dependency, achieve cloud-agnostic design
+- **Why**: Eliminate cloud vendor dependency, achieve cloud-agnostic design
 - **How**: `COSIGN_EXPERIMENTAL=1` + OIDC identity from CodeBuild
 - **Benefit**: No key management, automatic rotation, public transparency
 
@@ -293,7 +293,7 @@ All major issues resolved:
 - ✅ Lambda signing → Replaced with CodeBuild
 - ✅ EventBridge re-signing → Disabled
 - ✅ Missing checksum validation → Added
-- ✅ AWS KMS dependency → Removed (keyless)
+- ✅ Cloud vendor dependency → Removed (keyless)
 
 ---
 
@@ -309,7 +309,6 @@ All major issues resolved:
 ### Not Planned
 - Lambda signing service (CodeBuild is more reliable)
 - EventBridge auto-signing (defeats tampering detection)
-- AWS KMS (keyless is superior)
 
 ---
 
