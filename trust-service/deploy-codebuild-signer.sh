@@ -28,7 +28,7 @@ aws iam create-role \
   --assume-role-policy-document file:///tmp/trust-policy.json \
   2>/dev/null || echo "Role already exists"
 
-# Attach policies (removed KMS permissions)
+# Attach policies
 cat > /tmp/codebuild-policy.json <<POLICY
 {
   "Version": "2012-10-17",
@@ -57,7 +57,7 @@ aws iam put-role-policy \
   --policy-name ${PROJECT_NAME}-policy \
   --policy-document file:///tmp/codebuild-policy.json
 
-echo "✅ IAM role created (no KMS permissions needed)"
+echo "✅ IAM role created"
 sleep 5
 
 # Update CodeBuild project
