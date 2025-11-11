@@ -1,236 +1,327 @@
-# MICS295 Capstone - CI/CD Pipeline for Static Website
+# SalsaGate - Supply Chain Security Pipeline
 
 ## Overview
-Automated CI/CD pipeline for deploying a static HTML website to AWS S3 using GitHub Actions and AWS CodePipeline.
+
+SalsaGate is a cloud-agnostic supply chain security framework that implements SLSA compliance through cryptographic signing, public transparency logging, and tamper-evident verification. The system uses **Sigstore keyless signing** to eliminate key management overhead while maintaining enterprise-grade security.
+
+## Key Features
+
+✅ **Keyless Signing** - Sigstore identity-based signing (no keys to manage)  
+✅ **Cloud-Agnostic** - No vendor lock-in, works anywhere with OIDC  
+✅ **Public Transparency** - Rekor immutable audit log  
+✅ **Tamper Detection** - Checksum validation blocks modified artifacts  
+✅ **Zero-Trust Deployment** - Mandatory verification before production  
+✅ **SLSA Compliant** - Meets SLSA Level 3 requirements  
 
 ## Architecture
 
-### High-Level Flow
 ```mermaid
-graph TD
-    A[Developer Push to GitHub] --> B[GitHub Actions Triggered]
-    B --> C[CodeBuild Runner Executes]
-    C --> D[Build & Test Application]
-    D --> E[Package Artifacts]
-    E --> F[Upload to S3 Pipeline Bucket]
-    F --> G[Trigger CodePipeline]
-    G --> H[CodePipeline Sources Artifacts]
-    H --> I[CodeBuild Deploy Project]
-    I --> J[Deploy to Website S3 Bucket]
-    J --> K[Website Live]
-```
-
-### Detailed CI/CD Pipeline
-```mermaid
-sequenceDiagram
-    participant Dev as Developer
-    participant GH as GitHub
-    participant GA as GitHub Actions
-    participant CB as CodeBuild Runner
-    participant S3P as S3 Pipeline Bucket
-    participant CP as CodePipeline
-    participant CBD as CodeBuild Deploy
-    participant S3W as S3 Website Bucket
-    participant Web as Website
-
-    Dev->>GH: git push to main
-    GH->>GA: Trigger workflow
-    GA->>CB: Run on CodeBuild runner
-    CB->>CB: Run tests
-    CB->>CB: Build application
-    CB->>CB: Package as website.zip
-    CB->>S3P: Upload artifacts
-    CB->>CP: Trigger pipeline
-    CP->>S3P: Source artifacts
-    CP->>CBD: Start deploy build
-    CBD->>CBD: Extract artifacts
-    CBD->>S3W: Deploy to website
-    S3W->>Web: Serve static content
-```
-
-## Infrastructure Components
-
-### AWS Resources
-```mermaid
-graph LR
-    subgraph "GitHub"
-        GHA[GitHub Actions Workflow]
+graph TB
+    subgraph "Developer"
+        DEV[Developer Push]
     end
     
-    subgraph "AWS Account"
-        subgraph "CodeBuild"
-            CBR[test3 Runner]
-            CBD[mics295-deploy Project]
-        end
-        
-        subgraph "S3 Buckets"
-            S3P[mics295-pipeline-artifacts]
-            S3W[mics295-capstone-website]
-        end
-        
-        subgraph "CodePipeline"
-            CP[mics295-pipeline]
-        end
-        
-        subgraph "IAM"
-            CBRole[CodeBuild Roles]
-            CPRole[CodePipeline Role]
-        end
+    subgraph "GitHub"
+        GHA[GitHub Actions]
     end
-
-    GHA --> CBR
-    CBR --> S3P
-    CBR --> CP
-    CP --> S3P
-    CP --> CBD
-    CBD --> S3W
+    
+    subgraph "AWS"
+        CB1[CodeBuild Runner]
+        CB2[Keyless Signer]
+        S3[S3 Staging]
+        DDB[Trust Ledger]
+        CP[CodePipeline]
+        MA[Manual Approval]
+        CB3[Deploy + Verify]
+        WEB[Website S3]
+    end
+    
+    subgraph "Sigstore"
+        REKOR[Rekor Log]
+    end
+    
+    DEV -->|git push| GHA
+    GHA -->|build| CB1
+    CB1 -->|upload| S3
+    CB1 -->|invoke| CB2
+    CB2 -->|keyless sign| REKOR
+    CB2 -->|record| DDB
+    GHA -->|trigger| CP
+    CP -->|wait| MA
+    MA -->|approve| CB3
+    CB3 -->|verify| DDB
+    CB3 -->|validate| S3
+    CB3 -->|deploy| WEB
 ```
 
-## Deployment Flow
+## How It Works
 
-### 1. Continuous Integration (GitHub Actions)
-- **Trigger**: Push to `main` branch
-- **Runner**: CodeBuild (`test3`)
-- **Steps**:
-  1. Checkout code
-  2. Run tests
-  3. Build application
-  4. Package artifacts (`website.zip`)
-  5. Upload to `mics295-pipeline-artifacts` bucket
-  6. Trigger CodePipeline
-
-### 2. Continuous Deployment (CodePipeline)
-- **Source**: S3 bucket (`mics295-pipeline-artifacts/website.zip`)
-- **Deploy**: CodeBuild project (`mics295-deploy`)
-- **Steps**:
-  1. Download artifacts from S3
-  2. Extract `website.zip`
-  3. Sync content to `mics295-capstone-website` bucket
-  4. Website becomes live
-
-## File Structure
-```
-├── .github/workflows/
-│   └── deploy.yml          # GitHub Actions workflow
-├── index.html              # Main website file
-├── buildspec.yml           # CodeBuild deployment spec
-├── pipeline.yml            # CodePipeline CloudFormation template
-├── codebuild-setup.yml     # CodeBuild runner setup
-└── README.md               # This file
-```
-
-## Configuration Files
-
-### GitHub Actions Workflow (`.github/workflows/deploy.yml`)
-- Runs on CodeBuild runner
-- Packages application
-- Uploads artifacts to S3
-- Triggers CodePipeline
-
-### BuildSpec (`buildspec.yml`)
-- Defines CodeBuild deployment steps
-- Extracts artifacts
-- Deploys to S3 website bucket
-
-### Pipeline Template (`pipeline.yml`)
-- CloudFormation template for CodePipeline
-- Creates IAM roles and CodeBuild projects
-- Configures pipeline stages
-
-## Buckets
-
-### Pipeline Artifacts (`mics295-pipeline-artifacts`)
-- **Purpose**: Store build artifacts and pipeline files
-- **Content**: `website.zip` from GitHub Actions
-- **Access**: CodePipeline source
-
-### Website (`mics295-capstone-website`)
-- **Purpose**: Host static website
-- **Content**: Deployed HTML, CSS, JS files
-- **Access**: Public web access
-- **URL**: http://mics295-capstone-website.s3-website-us-east-1.amazonaws.com
-
-## Deployment Process
-
-### Manual Trigger
+### 1. Build & Sign (GitHub Actions)
 ```bash
-# Make changes to code
-echo "<p>New content</p>" >> index.html
-
-# Commit and push
-git add .
-git commit -m "Update website"
+# Developer pushes code
 git push origin main
 
-# Pipeline automatically triggers
+# GitHub Actions:
+# - Builds application
+# - Packages as index.tgz
+# - Uploads to S3
+# - Invokes keyless signer
 ```
 
-### Pipeline Status
-- **GitHub Actions**: Check Actions tab in repository
-- **CodePipeline**: AWS Console → CodePipeline → mics295-pipeline
-- **Website**: Visit the S3 website URL
+### 2. Keyless Signing (CodeBuild)
+```bash
+# Signer service:
+COSIGN_EXPERIMENTAL=1 cosign sign-blob \
+  --bundle artifact.tgz.bundle \
+  --yes \
+  artifact.tgz
 
-## Security & Permissions
+# - Signs with OIDC identity (no keys!)
+# - Uploads to Rekor transparency log
+# - Records digest in DynamoDB trust ledger
+```
 
-### CodeBuild Runner Permissions
-- S3 access to both buckets
-- CodePipeline execution permissions
-- CloudWatch Logs access
-- Secrets Manager access (for GitHub integration)
+### 3. Verification & Deploy (CodePipeline)
+```bash
+# Deploy stage:
+salsaG verify --artifact index.tgz
 
-### CodePipeline Permissions
-- S3 bucket access
-- CodeBuild project execution
-- IAM role assumptions
+# Checks:
+# ✅ Trust ledger: artifact exists
+# ✅ Checksum: SHA256 matches
+# ✅ Rekor: public proof available
 
-## Monitoring & Logs
+# If verified → Deploy to production
+# If failed → Block deployment
+```
 
-### GitHub Actions Logs
-- Available in GitHub repository Actions tab
-- Shows CI pipeline execution
+## Quick Start
 
-### CodeBuild Logs
-- CloudWatch Logs: `/aws/codebuild/test3` and `/aws/codebuild/mics295-deploy`
-- Build execution details and deployment status
+### Prerequisites
+- AWS Account
+- GitHub repository
+- AWS CLI configured
 
-### CodePipeline Monitoring
-- AWS Console pipeline view
-- Stage-by-stage execution status
-- Integration with CloudWatch
+### Setup
+
+1. **Create S3 Buckets**
+```bash
+aws s3 mb s3://mics295-pipeline-artifacts-bucket
+aws s3 mb s3://mics295-capstone-website-bucket
+```
+
+2. **Create DynamoDB Table**
+```bash
+aws dynamodb create-table \
+  --table-name trust-ledger \
+  --attribute-definitions AttributeName=object_key,AttributeType=S \
+  --key-schema AttributeName=object_key,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+```
+
+3. **Deploy Services**
+```bash
+cd trust-service
+./deploy-codebuild-signer.sh
+./deploy-verifier.sh
+```
+
+4. **Configure GitHub Actions**
+- Update `.github/workflows/deploy-salsag-cli.yml` with your bucket names
+- Push to trigger pipeline
+
+### Test
+
+```bash
+# Make a change
+echo "test" >> index.html
+git add index.html
+git commit -m "Test deployment"
+git push
+
+# Monitor
+gh run watch
+aws codepipeline get-pipeline-state --name mics295-pipeline
+```
+
+## Project Structure
+
+```
+├── .github/workflows/
+│   └── deploy-salsag-cli.yml    # CI/CD pipeline
+├── trust-service/
+│   ├── buildspec-signer.yml     # Keyless signing service
+│   ├── buildspec-verifier.yml   # Standalone verifier
+│   ├── deploy-codebuild-signer.sh
+│   └── deploy-verifier.sh
+├── salsag-cli/                  # SalsaG CLI tool
+│   └── salsag/
+│       ├── cli.py
+│       ├── core.py
+│       └── rekor_client.py
+├── tamper/                      # Negative test artifacts
+│   ├── index.tgz               # Tampered artifact
+│   └── README.md
+├── buildspec.yml                # Deploy verification
+├── salsag.yml                   # Configuration
+├── index.html                   # Application
+└── TECHNICAL_DOCUMENTATION.md   # Detailed docs
+```
+
+## Configuration
+
+**salsag.yml**:
+```yaml
+aws:
+  region: us-east-1
+  staging_bucket: mics295-pipeline-artifacts-bucket
+  ledger_table: trust-ledger
+
+skip_signing: true  # Signing done by CodeBuild service
+
+artifacts:
+  compression: "gzip"
+  include_sbom: true
+  include_provenance: true
+```
+
+## Security
+
+### Keyless Signing
+- **No keys to manage** - Uses OIDC identity from CodeBuild
+- **Short-lived certificates** - Issued by Sigstore Fulcio CA
+- **Public transparency** - All signatures in Rekor log
+- **Identity-based** - Certificate tied to build system
+
+### Tampering Detection
+```bash
+# Scenario: Attacker modifies artifact after signing
+
+# System response:
+# 1. Downloads artifact from S3
+# 2. Calculates SHA256: abc123...
+# 3. Compares with ledger: def456...
+# 4. Mismatch detected → Deployment BLOCKED
+```
+
+### Trust Ledger
+- **Single source of truth** - DynamoDB authoritative registry
+- **Immutable audit trail** - Complete verification history
+- **Fast lookups** - <2 second verification
+- **Fail-safe** - Unknown artifacts rejected
+
+## Testing
+
+### Positive Test (Clean Deployment)
+```bash
+# Push code → Sign → Verify → Deploy
+# Expected: ✅ Deployment succeeds
+```
+
+### Negative Test (Tamper Detection)
+```bash
+# 1. Trigger pipeline
+# 2. Wait for manual approval
+# 3. Tamper with artifact:
+aws s3 cp tamper/index.tgz s3://mics295-pipeline-artifacts-bucket/index.tgz
+
+# 4. Approve pipeline
+# Expected: ❌ Deployment blocked with "Checksum verification failed"
+```
+
+## Monitoring
+
+### Check Trust Ledger
+```bash
+aws dynamodb scan --table-name trust-ledger
+```
+
+### Verify in Rekor
+```bash
+# Get log index from ledger
+REKOR_ID=686027146
+
+# Query public log
+curl "https://rekor.sigstore.dev/api/v1/log/entries?logIndex=$REKOR_ID"
+```
+
+### View Logs
+```bash
+# Signing logs
+aws logs tail /aws/codebuild/salsag-artifact-signer --follow
+
+# Deploy logs
+aws logs tail /aws/codebuild/DeployBuild --follow
+
+# Verifier logs
+aws logs tail /aws/codebuild/salsag-artifact-verifier --follow
+```
 
 ## Troubleshooting
 
-### Common Issues
-1. **GitHub Actions queued**: Check CodeBuild runner configuration
-2. **Pipeline fails**: Verify S3 artifact exists and buildspec.yml syntax
-3. **Website not updating**: Check S3 sync in CodeBuild deploy logs
-4. **Permission errors**: Verify IAM roles and policies
-
-### Debug Commands
-```bash
-# Check pipeline artifacts
-aws s3 ls s3://mics295-pipeline-artifacts/
-
-# Check website content
-aws s3 ls s3://mics295-capstone-website/
-
-# View recent builds
-aws codebuild list-builds-for-project --project-name mics295-deploy
+**Verification Failed**
 ```
+❌ Checksum verification failed
+```
+→ Artifact was tampered with (expected for negative tests)
+
+**Signing Failed**
+```
+Error: COSIGN_EXPERIMENTAL not set
+```
+→ Ensure `COSIGN_EXPERIMENTAL=1` in buildspec
+
+**Ledger Not Found**
+```
+Artifact not found in ledger
+```
+→ Run GitHub Actions to sign and record artifact
+
+## Performance
+
+| Stage | Time | Notes |
+|-------|------|-------|
+| GitHub Actions | ~1 min | Build + sign |
+| Keyless Signing | ~5 sec | No key operations |
+| Manual Approval | Variable | Human gate |
+| Verification | ~3 sec | Ledger + checksum |
+| Deployment | ~10 sec | S3 upload |
+| **Total E2E** | **~6 min** | With approval |
+
+## Documentation
+
+- **[TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md)** - Complete technical details
+- **[tamper/README.md](tamper/README.md)** - Negative testing guide
 
 ## Benefits
 
-### Separation of Concerns
-- **GitHub Actions**: CI (testing, building, packaging)
-- **CodePipeline**: CD (deployment orchestration)
-- **CodeBuild**: Execution environment
+### vs Traditional Signing
+| Feature | Traditional | SalsaGate |
+|---------|------------|-----------|
+| Key Management | Manual | None (keyless) |
+| Key Rotation | Manual | Automatic |
+| Cloud Lock-in | Yes | No (OIDC) |
+| Public Audit | No | Yes (Rekor) |
+| Setup Time | Hours | Minutes |
 
-### Scalability
-- Independent scaling of CI and CD components
-- Reusable pipeline for multiple environments
-- Easy integration with additional AWS services
+### vs No Signing
+| Risk | Without Signing | With SalsaGate |
+|------|----------------|----------------|
+| Tampered artifacts | ❌ Deployed | ✅ Blocked |
+| Supply chain attacks | ❌ Undetected | ✅ Detected |
+| Compliance | ❌ Failed | ✅ SLSA L3 |
+| Audit trail | ❌ None | ✅ Complete |
 
-### Security
-- Separate buckets for artifacts and website
-- IAM roles with least privilege
-- Encrypted artifact storage
+## Contributing
+
+This is a UC Berkeley MICS Capstone project demonstrating supply chain security best practices.
+
+## License
+
+Educational use - UC Berkeley MICS Program
+
+---
+
+**Project**: UC Berkeley MICS Capstone (Cyber295)  
+**Last Updated**: November 2025  
+**Status**: Production-ready with keyless signing

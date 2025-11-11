@@ -1,7 +1,7 @@
 # SalsaG Trust Pipeline Configuration
 aws:
   region: us-east-1
-  staging_bucket: mics295-pipeline-artifacts
+  staging_bucket: mics295-pipeline-artifacts-bucket
   ledger_table: trust-ledger
 
 # Skip signing - using CodeBuild IAM role

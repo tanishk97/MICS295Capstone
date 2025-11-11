@@ -15,7 +15,7 @@ env:
 
 jobs:
   ci-with-salsag:
-    runs-on: codebuild-test3-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: codebuild-Mics295Pipeline-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
     - uses: actions/checkout@v4
     
@@ -75,8 +75,34 @@ jobs:
         echo "Config file exists: $(test -f salsag.yml && echo 'YES' || echo 'NO')"
         salsaG start --artifact ./dist --config ./salsag.yml || {
           echo "❌ SalsaG failed, trying without config..."
-          salsaG start --artifact ./dist --bucket mics295-pipeline-artifacts --table trust-ledger
+          salsaG start --artifact ./dist --bucket mics295-pipeline-artifacts-bucket --table trust-ledger
         }
+    
+    - name: 🔐 Invoke Keyless Signing Service
+      run: |
+        echo "🔑 Triggering keyless signing via CodeBuild..."
+        BUILD_ID=$(aws codebuild start-build \
+          --project-name salsag-artifact-signer \
+          --environment-variables-override name=ARTIFACT_KEY,value=index.tgz \
+          --query 'build.id' \
+          --output text)
+        
+        echo "Build ID: $BUILD_ID"
+        echo "Waiting for signing to complete..."
+        
+        # Wait for build to complete
+        for i in {1..30}; do
+          STATUS=$(aws codebuild batch-get-builds --ids $BUILD_ID --query 'builds[0].buildStatus' --output text)
+          echo "[$i] Signing status: $STATUS"
+          if [ "$STATUS" = "SUCCEEDED" ]; then
+            echo "✅ Keyless signing completed successfully"
+            break
+          elif [ "$STATUS" = "FAILED" ]; then
+            echo "❌ Signing failed"
+            exit 1
+          fi
+          sleep 5
+        done
         
     - name: Legacy Pipeline Compatibility
       run: |
@@ -86,7 +112,7 @@ jobs:
     - name: Upload to Pipeline Artifacts (Legacy)
       run: |
         echo "☁️ Uploading to legacy pipeline bucket..."
-        aws s3 cp website.zip s3://mics295-pipeline-artifacts/website.zip
+        aws s3 cp website.zip s3://mics295-pipeline-artifacts-bucket/website.zip
         
     - name: Trigger CodePipeline (Legacy)
       run: |

@@ -37,17 +37,30 @@ class ContextFilter(logging.Filter):
 _root = logging.getLogger("salsagate")
 
 
-def initialize_logger(cfg: dict):
-    # Set base logger level early
-    log_level_value = getattr(logging, cfg.get("level", "INFO").upper(), logging.INFO)
-    _root.setLevel(log_level_value)
-    _root.propagate = False  # prevent duplicate logs to root logger
+def initialize_logger(cfg: dict | None = None):
+    print("initalizing logger")
+        # Clear any existing handlers (in case we’re reinitializing)
+    for h in list(_root.handlers):
+        _root.removeHandler(h)
+    _root.handlers.clear()
 
+    # Remove filters too (optional)
+    for f in list(_root.filters):
+        _root.removeFilter(f)
 
+    # Reset level
+    _root.setLevel(logging.NOTSET)
+    _root.propagate = False
+
+    # 🚫 If no config is provided, leave logger inert and exit early
+    if not cfg:
+        return
+    print(config)
     # CloudWatch Handler
     if "cloudwatch" in cfg:
         log_group = os.getenv("LOG_GROUP", cfg["cloudwatch"].get("log_group")) or f"/salsagate/{_ENV}/app"
         stream_name = cfg["cloudwatch"].get("stream_name")
+        cw_log_level_value =  cfg["cloudwatch"].get("level")
         cloudwatch_client = boto3.client("logs", region_name="us-east-2")
 
         cw_handler = watchtower.CloudWatchLogHandler(
@@ -58,15 +71,16 @@ def initialize_logger(cfg: dict):
             use_queues=True,
         )
         cw_handler.setFormatter(jsonlogger.JsonFormatter())
-        cw_handler.setLevel(log_level_value)
+        cw_handler.setLevel(cw_log_level_value)
         _root.addHandler(cw_handler)
 
     # Syslog Handler
     if "syslog" in cfg:
         syslog_addr = cfg["syslog"].get("address", "/dev/log")
+        syslog_log_level_value =  cfg["cloudwatch"].get("level")
         syslog_handler = logging.handlers.SysLogHandler(address=syslog_addr)
         syslog_handler.setFormatter(jsonlogger.JsonFormatter())
-        syslog_handler.setLevel(log_level_value)
+        syslog_handler.setLevel(syslog_log_level_value)
         _root.addHandler(syslog_handler)
 
     # Always add contextual info

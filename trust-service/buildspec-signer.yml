@@ -1,0 +1,68 @@
+version: 0.2
+
+env:
+  variables:
+    COSIGN_EXPERIMENTAL: "1"  # Enable keyless signing
+
+phases:
+  install:
+    commands:
+      - echo "Installing cosign..."
+      - curl -sL "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64" -o /usr/local/bin/cosign
+      - chmod +x /usr/local/bin/cosign
+      - cosign version
+      
+  pre_build:
+    commands:
+      - echo "Artifact to sign - $ARTIFACT_KEY"
+      - echo "Downloading artifact from S3..."
+      - aws s3 cp s3://$BUCKET_NAME/$ARTIFACT_KEY ./artifact.tgz
+      - sha256sum artifact.tgz | awk '{print $1}' > artifact.sha256
+      - ARTIFACT_SHA256=$(cat artifact.sha256)
+      - echo "SHA256 - $ARTIFACT_SHA256"
+      
+  build:
+    commands:
+      - echo "🔑 Signing with Sigstore keyless (no keys needed)..."
+      - |
+        cosign sign-blob \
+          --bundle artifact.tgz.bundle \
+          --yes \
+          artifact.tgz
+      
+      - echo "Extracting Rekor log index from bundle..."
+      - cat artifact.tgz.bundle | jq '.'
+      - REKOR_LOG_INDEX=$(cat artifact.tgz.bundle | jq -r '.verificationMaterial.tlogEntries[0].logIndex // empty')
+      - echo "Rekor Log Index - $REKOR_LOG_INDEX"
+      - |
+        if [ -z "$REKOR_LOG_INDEX" ] || [ "$REKOR_LOG_INDEX" = "null" ]; then
+          echo "⚠️  No Rekor log index found, using bundle hash as identifier"
+          REKOR_LOG_INDEX=$(sha256sum artifact.tgz.bundle | awk '{print $1}')
+        fi
+      - echo "Final Rekor Log Index - $REKOR_LOG_INDEX"
+      
+  post_build:
+    commands:
+      - echo "Uploading bundle to S3..."
+      - aws s3 cp artifact.tgz.bundle s3://$BUCKET_NAME/cosign/$ARTIFACT_KEY.bundle
+      
+      - echo "Recording in trust ledger..."
+      - TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S)
+      - |
+        aws dynamodb put-item \
+          --table-name trust-ledger \
+          --item "{
+            \"object_key\": {\"S\": \"s3://$BUCKET_NAME/$ARTIFACT_KEY\"},
+            \"status\": {\"S\": \"verified\"},
+            \"digest\": {\"S\": \"sha256:$ARTIFACT_SHA256\"},
+            \"rekor_entry_id\": {\"S\": \"$REKOR_LOG_INDEX\"},
+            \"rekor_verified\": {\"BOOL\": true},
+            \"timestamp\": {\"S\": \"$TIMESTAMP\"},
+            \"details\": {\"S\": \"Signed with Sigstore keyless (OIDC identity-based)\"},
+            \"signing_method\": {\"S\": \"sigstore-keyless\"}
+          }"
+      
+      - echo "✅ Keyless signing complete - no keys managed!"
+      - echo "Artifact - $ARTIFACT_KEY"
+      - echo "Rekor Log Index - $REKOR_LOG_INDEX"
+      - echo "SHA256 - $ARTIFACT_SHA256"

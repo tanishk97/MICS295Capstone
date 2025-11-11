@@ -1,0 +1,45 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo "Installing SalsaG CLI..."
+      - git clone https://github.com/tanishk97/MICS295Capstone.git
+      - cd MICS295Capstone/salsag-cli && pip install -e . && cd ../..
+      
+  pre_build:
+    commands:
+      - echo "Verifier Service Started"
+      - echo "Artifact to verify - $ARTIFACT_KEY"
+      
+  build:
+    commands:
+      - |
+        cat > salsag.yml << EOF
+        aws:
+          region: us-east-1
+          staging_bucket: mics295-pipeline-artifacts-bucket
+          ledger_table: trust-ledger
+        EOF
+      - |
+        ARTIFACT_NAME=$(basename $ARTIFACT_KEY)
+        echo "🔍 Verifying artifact: $ARTIFACT_NAME"
+        
+        if salsaG verify --artifact $ARTIFACT_NAME --config salsag.yml; then
+          echo "✅ VERIFICATION PASSED"
+          echo "{\"status\":\"verified\",\"artifact\":\"$ARTIFACT_KEY\"}" > result.json
+        else
+          echo "❌ VERIFICATION FAILED"
+          echo "{\"status\":\"failed\",\"artifact\":\"$ARTIFACT_KEY\"}" > result.json
+          exit 1
+        fi
+        
+  post_build:
+    commands:
+      - cat result.json
+      
+artifacts:
+  files:
+    - result.json

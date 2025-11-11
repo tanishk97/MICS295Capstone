@@ -1,0 +1,69 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo "Installing cosign..."
+      - curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+      - sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+      - sudo chmod +x /usr/local/bin/cosign
+      
+  pre_build:
+    commands:
+      - echo "Signing Service Started"
+      - echo "Artifact - $ARTIFACT_KEY"
+      
+      # Retrieve signing key from AWS Secrets Manager (or any secret store)
+      - |
+        aws secretsmanager get-secret-value \
+          --secret-id salsag-signing-key \
+          --query SecretString \
+          --output text > cosign.key
+        chmod 600 cosign.key
+      
+  build:
+    commands:
+      - |
+        # Download artifact
+        aws s3 cp s3://${BUCKET}/${ARTIFACT_KEY} ./${ARTIFACT_KEY}
+        
+        # Calculate SHA256
+        SHA256=$(sha256sum ${ARTIFACT_KEY} | awk '{print $1}')
+        echo "Artifact SHA256: $SHA256"
+        
+        # Sign with local key
+        cosign sign-blob \
+          --key cosign.key \
+          --bundle ${ARTIFACT_KEY}.bundle \
+          --yes \
+          ${ARTIFACT_KEY}
+        
+        # Extract Rekor log index
+        REKOR_LOG_INDEX=$(cat ${ARTIFACT_KEY}.bundle | \
+          jq -r '.verificationMaterial.tlogEntries[0].logIndex')
+        
+        echo "Rekor Log Index: $REKOR_LOG_INDEX"
+        
+        # Upload bundle to S3
+        aws s3 cp ${ARTIFACT_KEY}.bundle s3://${BUCKET}/${ARTIFACT_KEY}.bundle
+        
+        # Record in trust ledger
+        aws dynamodb put-item \
+          --table-name trust-ledger \
+          --item "{
+            \"object_key\": {\"S\": \"s3://${BUCKET}/${ARTIFACT_KEY}\"},
+            \"digest\": {\"S\": \"sha256:${SHA256}\"},
+            \"rekor_entry_id\": {\"S\": \"${REKOR_LOG_INDEX}\"},
+            \"status\": {\"S\": \"verified\"},
+            \"timestamp\": {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%S)\"},
+            \"signing_method\": {\"S\": \"cosign-local-key\"},
+            \"rekor_verified\": {\"BOOL\": true},
+            \"details\": {\"S\": \"Signed with local key pair\"}
+          }"
+        
+        # Clean up key
+        rm -f cosign.key
+        
+        echo "✅ Signing complete"

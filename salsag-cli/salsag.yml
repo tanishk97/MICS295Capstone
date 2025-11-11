@@ -1,6 +1,6 @@
 # SalsaG Trust Pipeline Configuration
 aws:
-  region: us-east-2
+  region: us-east-1
   staging_bucket: test
   ledger_table: trust-ledger
 
@@ -15,11 +15,11 @@ artifacts:
 
 logging:
   cloudwatch:
-    level: "DEBUG"
-    log_group: "SalsaG"
-    stream_name: "Stream1"
-  #syslog:
-  #  level: "INFO"
-  #  address: "/dev/log"
+    level: "INFO"
+    log_group: "salsagate"
+    stream_name: "Stream2"
+  syslog:
+    level: "INFO"
+    address: "/dev/log"
              
         

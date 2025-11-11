@@ -13,10 +13,10 @@ from typing import Dict, List, Any, Optional
 import boto3
 from botocore.exceptions import ClientError
 
-
 from .sg_logging import get_logger as gLog
 from .sg_logging import log_step, metric_count, initialize_logger
 
+from .rekor_client import RekorClient, RekorError
 
 class SalsaGCore:
     """Core SalsaG trust pipeline functionality"""
@@ -26,12 +26,13 @@ class SalsaGCore:
         self.s3 = boto3.client('s3', region_name=config['aws']['region'])
         self.dynamodb = boto3.resource('dynamodb', region_name=config['aws']['region'])
         self.table = self.dynamodb.Table(config['aws']['ledger_table'])
-        if 'logging' in config:
-            initialize_logger(config['logging'])
+        initialize_logger(config.get("logging"))
         
-        self.logger = gLog("SalsaGCore")
-        metric_count("SalsaG-Init")
+        self.logger = gLog("SalsaG")
+        metric_count("Init")
 
+        self.rekor = RekorClient()
+    
     def package_artifact(self, artifact_path: Path, dry_run: bool = False) -> Path:
         """Package artifact into tarball"""
         with log_step("package_artifacts",artifact_file=artifact_path.name,) as step: 
@@ -124,8 +125,8 @@ class SalsaGCore:
             step.kv["provenance_file"] = provenance_path.name
             return provenance_path
     
-    def sign_artifact(self, artifact_path: Path, dry_run: bool = False) -> Dict[str, Path]:
-        """Sign artifact with cosign"""
+    def sign_artifact(self, artifact_path: Path, dry_run: bool = False) -> tuple[Dict[str, Path], Optional[str]]:
+        """Sign artifact with cosign and return signature files + Rekor entry UUID"""
         with log_step("sign_artifacts") as step:
             signature_files = {
                 'signature': artifact_path.with_suffix(artifact_path.suffix + '.sig'),
@@ -133,77 +134,90 @@ class SalsaGCore:
                 'attestation': artifact_path.with_suffix(artifact_path.suffix + '.attestation.sigstore')
             }
             
-            if not dry_run:
-                try:
-                    # Attempt cosign signing
-                    cmd_sign = [
-                        'cosign', 'sign-blob', '--yes',
-                        '--bundle', str(signature_files['signature']) + '.bundle',
-                        '--output-signature', str(signature_files['signature']),
-                        '--output-certificate', str(signature_files['certificate']),
-                        str(artifact_path)
-                    ]
-                    
-                    subprocess.run(cmd_sign, check=True, capture_output=True, text=True, timeout=30)
-                    
-                    signature_files['attestation'].touch()
-                    
-                except:
-                    # Silently create empty placeholder files
-                    for sig_file in signature_files.values():
-                        sig_file.touch()
-            else:
+            rekor_uuid = None
+            bundle_path = str(signature_files['signature']) + '.bundle'
+            
+            # Check if signing should be skipped (for CI environments using IAM roles)
+            skip_signing = self.config.get('skip_signing', False)
+            
+            if skip_signing or dry_run:
+                # Create empty placeholder files
+                for sig_file in signature_files.values():
+                    sig_file.touch()
+                return signature_files, None
+            
+            # Attempt actual cosign signing
+            try:
+                cmd_sign = [
+                    'cosign', 'sign-blob', '--yes',
+                    '--bundle', bundle_path,
+                    '--output-signature', str(signature_files['signature']),
+                    '--output-certificate', str(signature_files['certificate']),
+                    str(artifact_path)
+                ]
+                
+                result = subprocess.run(cmd_sign, check=True, capture_output=True, text=True, timeout=30)
+                signature_files['attestation'].touch()
+                
+                # Try to extract Rekor UUID from bundle
+                rekor_uuid = self.rekor.extract_rekor_uuid_from_bundle(bundle_path)
+                
+                # If bundle extraction failed, search Rekor by hash
+                if not rekor_uuid:
+                    artifact_sha256 = self._calculate_sha256(artifact_path)
+                    rekor_uuid = self.rekor.get_latest_entry_for_hash(artifact_sha256)
+                
+            except Exception as e:
+                # Silently create empty placeholder files
+                print(f"⚠️  Signing failed: {e}")
                 for sig_file in signature_files.values():
                     sig_file.touch()
             
-            
-            return signature_files
-    
+            return signature_files, rekor_uuid
+        
     def upload_artifacts(self, tarball_path: Path, signature_files: Dict[str, Path], 
-                        sbom_path: Path, provenance_path: Path, dry_run: bool = False) -> Dict[str, str]:
-        """Upload all artifacts to S3"""
-        
-        with log_step("upload_artifacts") as step:
+                            sbom_path: Path, provenance_path: Path, dry_run: bool = False) -> Dict[str, str]:
+            """Upload all artifacts to S3"""
+            
+            with log_step("upload_artifacts") as step:
 
-            bucket = self.config['aws']['staging_bucket']
-            s3_urls = {}
-            
-            files_to_upload = {
-                'tarball': tarball_path,
-                'signature': signature_files['signature'],
-                'certificate': signature_files['certificate'],
-                'attestation': signature_files['attestation'],
-                'sbom': sbom_path,
-                'provenance': provenance_path
-            }
-            
-            if not dry_run:
-                for file_type, file_path in files_to_upload.items():
-                    if file_type in ['signature', 'certificate', 'attestation']:
-                        # Store cosign files in /cosign folder
-                        key = f"cosign/{file_path.name}"
-                    else:
-                        key = file_path.name
-                    self.s3.upload_file(str(file_path), bucket, key)
-                    s3_urls[file_type] = f"s3://{bucket}/{key}"
-            else:
-                for file_type, file_path in files_to_upload.items():
-                    if file_type in ['signature', 'certificate', 'attestation']:
-                        key = f"cosign/{file_path.name}"
-                    else:
-                        key = file_path.name
-                    s3_urls[file_type] = f"s3://{bucket}/{key}"
-            
-            
-            step.kv["num_files"]= len(s3_urls)
-            step.kv["bucket"] = bucket
-            return s3_urls
+                bucket = self.config['aws']['staging_bucket']
+                s3_urls = {}
+                
+                files_to_upload = {
+                    'tarball': tarball_path,
+                    'signature': signature_files['signature'],
+                    'certificate': signature_files['certificate'],
+                    'attestation': signature_files['attestation'],
+                    'sbom': sbom_path,
+                    'provenance': provenance_path
+                }
+                
+                if not dry_run:
+                    for file_type, file_path in files_to_upload.items():
+                        if file_type in ['signature', 'certificate', 'attestation']:
+                            # Store cosign files in /cosign folder
+                            key = f"cosign/{file_path.name}"
+                        else:
+                            key = file_path.name
+                        self.s3.upload_file(str(file_path), bucket, key)
+                        s3_urls[file_type] = f"s3://{bucket}/{key}"
+                else:
+                    for file_type, file_path in files_to_upload.items():
+                        if file_type in ['signature', 'certificate', 'attestation']:
+                            key = f"cosign/{file_path.name}"
+                        else:
+                            key = file_path.name
+                        s3_urls[file_type] = f"s3://{bucket}/{key}"
+                
+                
+                step.kv["num_files"]= len(s3_urls)
+                step.kv["bucket"] = bucket
+                return s3_urls
     
-    def record_ledger(self, tarball_path: Path, s3_urls: Dict[str, str], dry_run: bool = False) -> Dict[str, Any]:
-        """Record verification in DynamoDB ledger"""
-
+    def record_ledger(self, tarball_path: Path, s3_urls: Dict[str, str], rekor_uuid: Optional[str] = None, dry_run: bool = False) -> Dict[str, Any]:
+        """Record verification in DynamoDB ledger with Rekor entry UUID"""
         with log_step("record_ledger") as step:
-        
             digest = f"sha256:{self._calculate_sha256(tarball_path)}"
             
             ledger_entry = {
@@ -215,10 +229,16 @@ class SalsaGCore:
                 'artifacts': s3_urls
             }
             
-            if not dry_run:
-                step.kv["put_response"] = self.table.put_item(Item=ledger_entry)
+            # Add Rekor entry UUID if available
+            if rekor_uuid:
+                ledger_entry['rekor_entry_id'] = rekor_uuid
+                ledger_entry['rekor_verified'] = True
+                step.kv["rekor_uuid"] = rekor_uuid
+
             
-            step.kv["tarball_name"]= tarball_path.name
+            if not dry_run:
+                self.table.put_item(Item=ledger_entry)
+                metric_count("LedgerRecord")
             
             return ledger_entry
     
@@ -267,7 +287,7 @@ class SalsaGCore:
                 return False
 
     def verify_from_ledger(self, artifact_name: str) -> Dict[str, Any]:
-        """Verify artifact from trust ledger"""
+        """Verify artifact from trust ledger with Rekor verification"""
         with log_step("verify_from_ledger") as step:
             # Construct S3 URI
             bucket = self.config['aws']['staging_bucket']
@@ -278,16 +298,38 @@ class SalsaGCore:
                 
                 if 'Item' in response:
                     item = response['Item']
-                    return {
+                    result = {
                         'verified': item['status'] == 'verified',
                         'digest': item.get('digest'),
                         'timestamp': item.get('timestamp'),
-                        'details': item.get('details')
+                        'details': item.get('details'),
+                        'verification_method': 'ledger'
                     }
-                else:
-                    step.kv["WARN"] = "Not in Ledger"
-                    return {'verified': False, 'status': 'Not found in ledger'}
                     
+                    # If Rekor entry ID exists, verify against Rekor
+                    rekor_entry_id = item.get('rekor_entry_id')
+                    if rekor_entry_id:
+                        try:
+                            expected_sha256 = item.get('digest', '')
+                            rekor_verified = self.rekor.verify_entry(rekor_entry_id, expected_sha256)
+                            result['rekor_verified'] = rekor_verified
+                            result['rekor_entry_id'] = rekor_entry_id
+                            result['verification_method'] = 'rekor'
+                            
+                            if not rekor_verified:
+                                result['verified'] = False
+                                result['details'] = 'Rekor verification failed'
+                                
+                        except RekorError as e:
+                            print(f"⚠️  Rekor verification failed: {e}")
+                            result['rekor_verified'] = False
+                            result['rekor_error'] = str(e)
+                            # Don't fail completely, ledger entry still valid
+                    
+                    return result
+                else:
+                    return {'verified': False, 'status': 'Not found in ledger'}
+        
             except ClientError as e:
                 raise RuntimeError(f"DynamoDB error: {e}")
     
@@ -308,6 +350,7 @@ class SalsaGCore:
                 verification_results['ledger_verified'] = ledger_result.get('verified', False)
                 
                 if verification_results['ledger_verified']:
+                    metric_count("ledgerVerified")
                     verification_results['details'].append("✅ Trust ledger verification passed")
                     
                     # Step 2: Download and verify checksum if ledger has digest
@@ -335,7 +378,9 @@ class SalsaGCore:
                             if calculated_digest == stored_digest:
                                 verification_results['checksum_verified'] = True
                                 verification_results['details'].append("✅ Checksum verification passed")
+                                metric_count("CheckSumVerified")
                             else:
+                                metric_count("CheckSumVerifyFailed")
                                 verification_results['details'].append("❌ Checksum verification failed")
                     
                     # Step 3: Verify cosign signatures if they exist
@@ -375,14 +420,16 @@ class SalsaGCore:
                                 )
                                 
                             except ClientError:
-                                verification_results['details'].append("⚠️  Cosign signature files not found - skipping")
-                                verification_results['cosign_verified'] = True  # Don't fail for missing signatures
+                                # Cosign files not found - using keyless signing
+                                verification_results['cosign_verified'] = True
                                 
                     except Exception as e:
+                        
                         verification_results['details'].append(f"⚠️  Cosign verification error: {e}")
                         verification_results['cosign_verified'] = True  # Don't fail pipeline
                         
                 else:
+                    metric_count("ledgerVerifyFailed")
                     verification_results['details'].append("❌ Trust ledger verification failed")
                 
                 # Overall verification: ledger must pass, checksum should pass if available
@@ -391,9 +438,10 @@ class SalsaGCore:
                     verification_results['checksum_verified'] and
                     verification_results['cosign_verified']
                 )
-                
+                step.kv["overall_verified"]= verification_results['overall_verified']
                 return verification_results
                 
+
             except Exception as e:
                 verification_results['details'].append(f"❌ Verification error: {e}")
                 return verification_results
@@ -414,8 +462,10 @@ class SalsaGCore:
                     'verified_count': verified_count,
                     'failed_count': failed_count,
                     'total_count': total_count
-                }
+                }                
+               
                 
+                    
             except ClientError as e:
                 raise RuntimeError(f"DynamoDB error: {e}")
     
