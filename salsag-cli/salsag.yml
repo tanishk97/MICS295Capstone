@@ -1,0 +1,25 @@
+# SalsaG Trust Pipeline Configuration
+aws:
+  region: us-east-2
+  staging_bucket: test
+  ledger_table: trust-ledger
+
+signing:
+  oidc_issuer: "https://token.actions.githubusercontent.com"
+  identity_regexp: "https://github.com/.+"
+
+artifacts:
+  compression: "gzip"
+  include_sbom: true
+  include_provenance: true
+
+logging:
+  cloudwatch:
+    level: "DEBUG"
+    log_group: "SalsaG"
+    stream_name: "Stream1"
+  #syslog:
+  #  level: "INFO"
+  #  address: "/dev/log"
+             
+        

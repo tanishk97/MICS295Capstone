@@ -13,7 +13,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
     
     with open(config_file, 'r') as f:
         config = yaml.safe_load(f)
-    
+
     # Validate required fields
     required_fields = [
         'aws.region',
@@ -48,7 +48,7 @@ def get_default_config() -> Dict[str, Any]:
         'aws': {
             'region': 'us-east-1',
             'staging_bucket': 'your-staging-bucket',
-            'ledger_table': 'trust-ledger'
+            'ledger_table': 'trust-ledger',
         },
         'signing': {
             'oidc_issuer': 'https://token.actions.githubusercontent.com',
@@ -58,5 +58,22 @@ def get_default_config() -> Dict[str, Any]:
             'compression': 'gzip',
             'include_sbom': True,
             'include_provenance': True
-        }
+        },
+        # Default is to have no remote logging.
+        # Supported logging include one or multiple options of:
+        #   cloudwatch -> log to cloudwatch. cloudwatch_enabled must be set to True in aws settings
+        #   syslog -> log to a local or remote syslog server
+        #   local -> log to a local file, imcluding   
+        #'logging':{
+            #'cloudwatch':{
+            #    'level': 'INFO',
+            #    'log_group':'SalsaGate',
+            #    'stream_name':"cli"
+            #}
+            #'syslog':{
+            #   'level':'DEBUG',
+            #   'address':'/dev/log',
+            #} 
+        #}
+
     }
