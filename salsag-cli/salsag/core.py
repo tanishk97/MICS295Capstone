@@ -75,27 +75,19 @@ class SalsaGCore:
         """Generate Software Bill of Materials (SBOM)"""
         
         sbom_path = Path.cwd() / f"sbom-{datetime.now().strftime('%Y%m%d-%H%M%S')}.spdx.json"
-        
+        sbom_data = _get_generic_sbom(artifact_path)
         if not dry_run:
-            # Simple SBOM generation (in production, use proper SBOM tools)
-
             syft_bin_path = shutil.which("syft")
             if syft_bin_path:
-                args = [syft_bin_path, str(artifact_path), "-o", "spdx-json"]
-                print("Running:", " ".join(args))
                 try:
+                    sanitized_path = artifact_path.expanduser.resolve(strict=True)
+                    args = [syft_bin_path, str(sanitized_path), "-o", "spdx-json"]
                     proc = subprocess.run(args, capture_output=True, text=True, timeout=500)
+                    if proc.returncode == 0:
+                        sbom_data = json.loads(proc.stdout)
                 except subprocess.TimeoutExpired:
-                    sbom_data= _get_generic_sbom(artifact_path)
-                
-                if proc.returncode != 0:
-                    sbom_data= _get_generic_sbom(artifact_path)
-                else:
-                    sbom_data = json.loads(proc.stdout)
+                    pass
             
-            else:
-               sbom_data = _get_generic_sbom(artifact_path)
- 
         with open(sbom_path, 'w') as f:
             json.dump(sbom_data, f, indent=2)
                
