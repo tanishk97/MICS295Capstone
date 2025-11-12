@@ -11,3 +11,9 @@ artifacts:
   compression: "gzip"
   include_sbom: true
   include_provenance: true
+
+logging:
+  cloudwatch:
+    level: "INFO"
+    log_group: "salsagate"
+    stream_name: "mintyfresh"
