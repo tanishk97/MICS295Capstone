@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import shutil
 import json
 import hashlib
 import tarfile
@@ -14,6 +15,28 @@ import boto3
 from botocore.exceptions import ClientError
 
 from .rekor_client import RekorClient, RekorError
+
+
+def _get_generic_sbom(artifact_path: Path):
+    sbom_data = {
+                "spdxVersion": "SPDX-2.3",
+                "dataLicense": "CC0-1.0",
+                "SPDXID": "SPDXRef-DOCUMENT",
+                "name": f"SBOM for {artifact_path.name}",
+                "documentNamespace": f"https://salsag.example.com/{artifact_path.name}",
+                "creationInfo": {
+                    "created": datetime.utcnow().isoformat() + "Z",
+                    "creators": ["Tool: SalsaG CLI"]
+                },
+                "packages": [{
+                    "SPDXID": "SPDXRef-Package",
+                    "name": artifact_path.name,
+                    "downloadLocation": "NOASSERTION",
+                    "filesAnalyzed": False,
+                    "copyrightText": "NOASSERTION"
+                }]
+            }
+    return sbom_data
 
 class SalsaGCore:
     """Core SalsaG trust pipeline functionality"""
@@ -55,28 +78,27 @@ class SalsaGCore:
         
         if not dry_run:
             # Simple SBOM generation (in production, use proper SBOM tools)
-            sbom_data = {
-                "spdxVersion": "SPDX-2.3",
-                "dataLicense": "CC0-1.0",
-                "SPDXID": "SPDXRef-DOCUMENT",
-                "name": f"SBOM for {artifact_path.name}",
-                "documentNamespace": f"https://salsag.example.com/{artifact_path.name}",
-                "creationInfo": {
-                    "created": datetime.utcnow().isoformat() + "Z",
-                    "creators": ["Tool: SalsaG CLI"]
-                },
-                "packages": [{
-                    "SPDXID": "SPDXRef-Package",
-                    "name": artifact_path.name,
-                    "downloadLocation": "NOASSERTION",
-                    "filesAnalyzed": False,
-                    "copyrightText": "NOASSERTION"
-                }]
-            }
+
+            syft_bin_path = shutil.which("syft")
+            if syft_bin_path:
+                args = [syft_bin_path, str(artifact_path), "-o", "spdx-json"]
+                print("Running:", " ".join(args))
+                try:
+                    proc = subprocess.run(args, capture_output=True, text=True, timeout=500)
+                except subprocess.TimeoutExpired:
+                    sbom_data= _get_generic_sbom(artifact_path)
+                
+                if proc.returncode != 0:
+                    sbom_data= _get_generic_sbom(artifact_path)
+                else:
+                    sbom_data = json.loads(proc.stdout)
             
-            with open(sbom_path, 'w') as f:
-                json.dump(sbom_data, f, indent=2)
-        
+            else:
+               sbom_data = _get_generic_sbom(artifact_path)
+ 
+        with open(sbom_path, 'w') as f:
+            json.dump(sbom_data, f, indent=2)
+               
         return sbom_path
     
     def create_provenance(self, tarball_path: Path, dry_run: bool = False) -> Path:
