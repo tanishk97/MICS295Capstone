@@ -88,8 +88,8 @@ class SalsaGCore:
                 except subprocess.TimeoutExpired:
                     pass
             
-        with open(sbom_path, 'w') as f:
-            json.dump(sbom_data, f, indent=2)
+            with open(sbom_path, 'w') as f:
+                json.dump(sbom_data, f, indent=2)
                
         return sbom_path
     
