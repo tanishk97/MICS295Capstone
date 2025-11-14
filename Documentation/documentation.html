@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SalsaGate Technical Documentation</title>
+    <meta name="description"
+        content="Technical documentation for SalsaGate, a supply-chain security and verification platform for DevSecOps teams." />
+    <link rel="icon" href="assets/logo.svg" />
+    <link rel="stylesheet" href="assets/styles.css" />
+</head>
+
+<body>
+    <header class="header">
+        <div class="container row">
+            <div class="brand">
+                <img src="assets/logo.svg" alt="SalsaGate logo" />
+                <strong>SalsaGate</strong>
+            </div>
+            <nav class="nav">
+                <a href="index.html">Home</a>
+                <a href="#abstract">Abstract</a>
+                <a href="#architecture">Architecture</a>
+                <a href="#design">Design</a>
+                <a href="#testing">Testing</a>
+                <a href="#future-work">Future Work</a>
+                <a href="#" class="btn ghost" data-theme-toggle>🌓</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="docs">
+        <div class="docs-header">
+            <div class="docs-title">
+                <h1>SalsaGate Technical Documentation</h1>
+                <p class="docs-meta">
+                    Project: SalsaGate — Supply-Chain Security &amp; Verification for DevSecOps Teams<br />
+                    Version 1.0 • Last updated: Nov 2025
+                </p>
+                <div>
+                    <span class="badge-pill ok">Status: Active</span>
+                    <span class="badge-pill">Owners: DevSecOps Platform Team</span>
+                </div>
+            </div>
+            <aside class="toc" aria-label="Table of contents">
+                <h3>On this page</h3>
+                <ul>
+                    <li><a href="#abstract" class="toc-link">1. Abstract</a></li>
+                    <li><a href="#introduction" class="toc-link">2. Introduction</a></li>
+                    <li><a href="#problem" class="toc-link">3. Problem Statement & Goals</a></li>
+                    <li><a href="#architecture" class="toc-link">4. System Architecture</a></li>
+                    <li><a href="#tech-stack" class="toc-link">5. Technology Stack</a></li>
+                    <li><a href="#design" class="toc-link">6. Design & Implementation</a></li>
+                    <li><a href="#security" class="toc-link">7. Security, Privacy & Ethics</a></li>
+                    <li><a href="#testing" class="toc-link">8. Testing & Evaluation</a></li>
+                    <li><a href="#challenges" class="toc-link">9. Challenges & Limitations</a></li>
+                    <li><a href="#future-work" class="toc-link">10. Future Work</a></li>
+                    <li><a href="#references" class="toc-link">11. References</a></li>
+                </ul>
+            </aside>
+        </div>
+
+        <!-- 1. Abstract -->
+        <section id="abstract" class="docs-section">
+            <h2>1. Abstract</h2>
+            <p class="subtitle">High-level overview of the problem and SalsaGate’s solution.</p>
+            <p>
+                SalsaGate is a supply-chain security platform that integrates with existing CI/CD pipelines to ensure
+                that
+                software artifacts and infrastructure changes are authenticated, policy-compliant, and auditable from
+                commit
+                to production. The core idea is to treat each build or deployment as a verifiable event backed by
+                cryptographic signatures, SBOMs, and attestations.
+            </p>
+            <p>
+                This document describes SalsaGate’s architecture, design decisions, security model, and evaluation. It
+                is
+                written for engineers, DevSecOps practitioners, and reviewers who need a deeper technical understanding
+                of
+                the system.
+            </p>
+        </section>
+
+        <!-- 2. Introduction -->
+        <section id="introduction" class="docs-section">
+            <h2>2. Introduction</h2>
+            <p class="subtitle">Background, motivation, and context.</p>
+            <p>
+                Modern software supply chains rely on a complex mesh of source repositories, build systems, package
+                registries,
+                container registries, and deployment platforms. Compromises at any stage—such as tampered images,
+                malicious
+                dependencies, or misconfigured pipelines—can lead to production incidents and regulatory risk.
+            </p>
+            <p>
+                Rather than relying on ad-hoc checks and manual approvals, SalsaGate introduces a structured
+                verification
+                layer. Every artifact and configuration must meet a set of machine-readable policies before promotion.
+                Verification results are stored as evidence, enabling both automated gates and human audits.
+            </p>
+            <p>
+                The design is influenced by principles from SLSA, NIST supply-chain guidance, and real-world DevSecOps
+                workflows, but it focuses on pragmatic integration with tools teams already use.
+            </p>
+        </section>
+
+        <!-- 3. Problem Statement -->
+        <section id="problem" class="docs-section">
+            <h2>3. Problem Statement & Goals</h2>
+            <p class="subtitle">What SalsaGate is trying to solve and why.</p>
+            <h3>3.1 Problem Statement</h3>
+            <ul>
+                <li>Teams lack a unified way to enforce signing, SBOMs, and test requirements across all pipelines.</li>
+                <li>Verification logic is often embedded directly in CI scripts, making it inconsistent and hard to
+                    audit.</li>
+                <li>Evidence needed for audits and incident response is fragmented or missing.</li>
+            </ul>
+
+            <h3>3.2 Project Goals</h3>
+            <ul>
+                <li>Provide a central verification service that can be called from any CI/CD system.</li>
+                <li>Offer policy-as-code so teams can express and review security requirements in version control.</li>
+                <li>Persist verification results and attestations in an evidence store for later analysis and audits.
+                </li>
+                <li>Keep developer friction low: easy CLI, clear error messages, fast verification.</li>
+            </ul>
+
+            <h3>3.3 Scope</h3>
+            <p>
+                The initial scope covers build artifacts (binaries, containers, bundles) and infrastructure plans (e.g.
+                Terraform). Runtime behavior such as behavior-based anomaly detection is out of scope for this version.
+            </p>
+        </section>
+
+        <!-- 4. System Architecture -->
+        <section id="architecture" class="docs-section">
+            <h2>4. System Architecture</h2>
+            <p class="subtitle">Components, interactions, and trust boundaries.</p>
+
+            <div class="architecture-tabs">
+                <div class="tab-bar" role="tablist">
+                    <button class="tab-btn active" data-tab="arch-high">High-Level</button>
+                    <button class="tab-btn" data-tab="arch-flow">Verification Flow</button>
+                    <button class="tab-btn" data-tab="arch-sequence">Sequence Diagram</button>
+                </div>
+
+                <!-- High-Level -->
+                <div class="tab-panel active" data-tab-panel="arch-high">
+                    <p>
+                        SalsaGate is composed of three main components:
+                    </p>
+                    <ol>
+                        <li>
+                            <strong>CLI &amp; CI Integrations</strong> — Lightweight clients that run in CI to
+                            authenticate, register
+                            artifacts, and ask SalsaGate to verify them.
+                        </li>
+                        <li>
+                            <strong>Verification Service</strong> — A stateless API that performs signature checks,
+                            policy evaluation,
+                            and logging.
+                        </li>
+                        <li>
+                            <strong>Evidence Store</strong> — A durable store for SBOMs, attestations, and verification
+                            events.
+                        </li>
+                    </ol>
+                    <div class="grid-two">
+                        <div>
+                            <pre><code># Simplified data flow
+Developer → CI Build → (sign + attest)
+  → SalsaGate Verify API
+    → Evidence Store
+      → Deploy (K8s admission / release gates)</code></pre>
+                        </div>
+                        <div>
+                            <table class="table-like">
+                                <thead>
+                                    <tr>
+                                        <th>Component</th>
+                                        <th>Responsibility</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>CLI</td>
+                                        <td>Auth, register, verify, attest</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Verify API</td>
+                                        <td>Signature &amp; policy evaluation</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Evidence Store</td>
+                                        <td>SBOMs, attestations, logs</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Admission Controller</td>
+                                        <td>Runtime enforcement</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Verification Flow -->
+                <div class="tab-panel" data-tab-panel="arch-flow">
+                    <p>Typical verification flow for a container image:</p>
+                    <ol>
+                        <li>CI builds an image and pushes it to a container registry.</li>
+                        <li>CI generates an SBOM and vulnerability scan report, then creates an attestation.</li>
+                        <li>CI signs both the image and attestation using Cosign or another signer.</li>
+                        <li>SalsaGate CLI calls the verification API with references to the image and attestations.</li>
+                        <li>The API fetches signatures/metadata, evaluates policy, and records the result in the
+                            evidence store.</li>
+                        <li>Deployment tooling or admission controls check SalsaGate before allowing production
+                            deployment.</li>
+                    </ol>
+                    <pre><code># CI verification step
+salsagate verify \
+  --artifact ghcr.io/org/app:sha-1234 \
+  --policy strict \
+  --sbom sbom.spdx.json \
+  --attestation vuln-scan.json</code></pre>
+                </div>
+
+                <!-- Sequence Diagram -->
+                <div class="tab-panel" data-tab-panel="arch-sequence">
+                    <p>Text-based sequence diagram (GitHub Actions + SalsaGate + Kubernetes):</p>
+                    <pre><code>Developer        GitHub Actions        SalsaGate API        Evidence Store        K8s Admission
+    |                   |                     |                    |                    |
+    |   git push        |                     |                    |                    |
+    |------------------&gt;|                     |                    |                    |
+    |                   | build, test, scan   |                    |                    |
+    |                   |--------------------&gt;|                    |                    |
+    |                   | sign image & SBOM   |                    |                    |
+    |                   |--------------------&gt;| verify(image,...)  |                    |
+    |                   |                     |----policy checks---&gt;|                    |
+    |                   |                     |&lt;---store results---|                    |
+    |                   |   deploy manifest   |                    | verify admission   |
+    |                   |-------------------------------------------&gt;|------------------&gt;|
+    |                   |                     |                    | allow / deny       |</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. Technology Stack -->
+        <section id="tech-stack" class="docs-section">
+            <h2>5. Technology Stack</h2>
+            <p class="subtitle">Languages, frameworks, and infrastructure services.</p>
+            <div class="grid-two">
+                <div>
+                    <h3>Core Services</h3>
+                    <ul>
+                        <li>Backend: Go or TypeScript (Node.js), packaged as stateless services.</li>
+                        <li>API: REST + JSON responses, with optional gRPC for internal use.</li>
+                        <li>Storage: PostgreSQL for metadata, object storage (e.g. S3) for large artifacts.</li>
+                        <li>Caching: Redis for hot verification results (optional but recommended).</li>
+                    </ul>
+                    <h3>Integrations</h3>
+                    <ul>
+                        <li>SalsaGate CLI distributed as a single binary.</li>
+                        <li>GitHub Actions / GitLab CI / Jenkins templates.</li>
+                        <li>Kubernetes admission controller for runtime gating.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>Security &amp; Identity</h3>
+                    <ul>
+                        <li>OIDC workload identity from GitHub, GitLab, or cloud providers.</li>
+                        <li>Cosign / Sigstore, KMS/HSM, and GPG as signing backends.</li>
+                        <li>mTLS for internal service-to-service communication.</li>
+                    </ul>
+                    <h3>Observability</h3>
+                    <ul>
+                        <li>Structured JSON logs with correlation IDs.</li>
+                        <li>Prometheus metrics for latency, error rate, and throughput.</li>
+                        <li>OpenTelemetry-compatible tracing hooks.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. Design & Implementation -->
+        <section id="design" class="docs-section">
+            <h2>6. Design &amp; Implementation</h2>
+            <p class="subtitle">Key design choices and how they are implemented.</p>
+
+            <h3>6.1 Policy-as-Code</h3>
+            <p>
+                Policies are stored as versioned YAML files in the same repositories as the services they govern. Each
+                policy
+                can be associated with a project, environment (dev/stage/prod), or artifact type.
+            </p>
+            <pre><code># policy.yml
+require_signatures: true
+allowed_signers:
+  - ci-bot@salsagate.dev
+  - release-manager@salsagate.dev
+enforce_sbom: true
+checks:
+  - name: unit-tests
+    must_pass: true
+  - name: vuln-scan
+    severity_max: "medium"</code></pre>
+
+            <h3>6.2 Stateless Verification Service</h3>
+            <p>
+                The verification API is stateless with respect to client sessions. Requests carry all necessary
+                identifiers
+                (artifact URIs, policy name, attestation locations). This simplifies scaling and makes the service easy
+                to
+                deploy in containerized environments.
+            </p>
+            <div class="callout">
+                Stateless design allows horizontal scaling and blue/green deployments without migrating session state.
+            </div>
+
+            <h3>6.3 CI/CD Integration Pattern</h3>
+            <p>
+                Integration aims to be minimal and tool-agnostic. CI pipelines:
+            </p>
+            <ul>
+                <li>Build artifacts and generate SBOMs and test reports.</li>
+                <li>Sign artifacts and/or attestations.</li>
+                <li>Invoke <code>salsagate verify</code> with appropriate flags.</li>
+            </ul>
+            <pre><code># GitHub Actions example
+- name: Build
+  run: make build
+
+- name: Sign artifact
+  run: cosign sign-blob --key ${{ secrets.COSIGN_KEY }} dist/app.tar.gz
+
+- name: SalsaGate Verify
+  run: salsagate verify \
+    --artifact dist/app.tar.gz \
+    --policy strict</code></pre>
+        </section>
+
+        <!-- 7. Security, Privacy & Ethics -->
+        <section id="security" class="docs-section">
+            <h2>7. Security, Privacy &amp; Ethics</h2>
+            <p class="subtitle">Threat model, mitigations, and ethical considerations.</p>
+
+            <div class="callout warning">
+                SalsaGate sits in the critical path of deployments. A compromise could enable malicious releases or
+                block
+                legitimate ones. Hardened deployment and ongoing monitoring are essential.
+            </div>
+
+            <h3>7.1 Threat Model</h3>
+            <ul>
+                <li>Compromised CI agent attempting to publish unsigned or malicious artifacts.</li>
+                <li>Stolen signing keys used to sign hostile payloads.</li>
+                <li>MITM attacks between CI systems and SalsaGate services.</li>
+                <li>Tampering with evidence (SBOMs, logs) to hide vulnerabilities.</li>
+            </ul>
+
+            <h3>7.2 Mitigations</h3>
+            <ul>
+                <li>Use OIDC workload identity instead of long-lived secrets in CI.</li>
+                <li>Store keys in KMS/HSM; enforce strong access controls and rotation.</li>
+                <li>Enforce mTLS for communication with SalsaGate APIs.</li>
+                <li>Use append-only or WORM storage for evidence.</li>
+                <li>Apply RBAC and audit logs around policy changes and evidence exports.</li>
+            </ul>
+
+            <h3>7.3 Privacy & Ethics</h3>
+            <p>
+                SalsaGate primarily manages metadata and security-relevant information (hashes, identities, SBOMs). It
+                is not
+                designed to store personal data. Teams should avoid logging secrets and follow internal data
+                classification
+                guidelines when exporting evidence.
+            </p>
+            <p>
+                Ethically, SalsaGate aims to increase transparency and accountability in software releases, reducing the
+                risk
+                of harmful incidents caused by unnoticed supply-chain manipulations.
+            </p>
+        </section>
+
+        <!-- 8. Testing & Evaluation -->
+        <section id="testing" class="docs-section">
+            <h2>8. Testing &amp; Evaluation</h2>
+            <p class="subtitle">Verification correctness, performance, and integration tests.</p>
+
+            <h3>8.1 Unit &amp; Integration Tests</h3>
+            <ul>
+                <li>Unit tests for policy evaluation and signature verification logic.</li>
+                <li>Integration tests with local registries and signing tools (Cosign, GPG).</li>
+                <li>End-to-end tests simulating CI pipelines across multiple repositories.</li>
+            </ul>
+            <pre><code># Run Go tests
+go test ./...
+
+# or language-specific
+npm test
+pytest</code></pre>
+
+            <h3>8.2 Performance Evaluation</h3>
+            <p>Key targets for v1:</p>
+            <ul>
+                <li>&lt; 150ms median verification latency for common artifact sizes.</li>
+                <li>Graceful degradation and backoff when external registries are slow.</li>
+                <li>Horizontal scaling verified through load tests.</li>
+            </ul>
+
+            <h3>8.3 CI Validation</h3>
+            <p>Reference pipelines exist for:</p>
+            <ul>
+                <li>GitHub Actions: OIDC + Cosign + SalsaGate verify.</li>
+                <li>GitLab CI: shared runners with environment-based configuration.</li>
+                <li>Jenkins: credential store and scripted stages using the CLI.</li>
+            </ul>
+        </section>
+
+        <!-- 9. Challenges & Limitations -->
+        <section id="challenges" class="docs-section">
+            <h2>9. Challenges &amp; Limitations</h2>
+            <p class="subtitle">Known constraints and lessons learned.</p>
+
+            <details open>
+                <summary>Diverse signing approaches</summary>
+                <p>
+                    Organizations often mix Cosign, GPG, and cloud KMS signing. SalsaGate addresses this through
+                    pluggable
+                    verification backends, but configuration can still be complex in multi-cloud environments.
+                </p>
+            </details>
+
+            <details>
+                <summary>Developer experience vs strict policies</summary>
+                <p>
+                    If policies are too strict from day one, teams may view SalsaGate as a blocker. To mitigate this,
+                    policies
+                    support different enforcement modes (<code>observe</code>, <code>warn</code>, <code>enforce</code>)
+                    that can be rolled out gradually.
+                </p>
+            </details>
+
+            <details>
+                <summary>Evidence storage growth</summary>
+                <p>
+                    Evidence can grow quickly in high-velocity environments. Retention policies, tiered storage, and
+                    export-to-archive workflows are required to keep storage costs manageable.
+                </p>
+            </details>
+        </section>
+
+        <!-- 10. Future Work -->
+        <section id="future-work" class="docs-section">
+            <h2>10. Future Work</h2>
+            <p class="subtitle">Planned enhancements and research directions.</p>
+            <ul>
+                <li>Full Kubernetes admission controller with interactive policy debugging.</li>
+                <li>IDE plugins to surface policy hints and violations in real time.</li>
+                <li>Deeper integrations with vulnerability scanners and SBOM generators.</li>
+                <li>Evidence explorer UI for auditors and compliance officers.</li>
+                <li>gRPC/streaming verification API for very high-throughput internal use cases.</li>
+            </ul>
+        </section>
+
+        <!-- 11. References -->
+        <section id="references" class="docs-section">
+            <h2>11. References</h2>
+            <p class="subtitle">Standards, tools, and related work.</p>
+            <ul>
+                <li>Supply-chain security frameworks (e.g. SLSA, NIST guidance on software supply-chain security).</li>
+                <li>Sigstore / Cosign documentation and examples.</li>
+                <li>SBOM standards: SPDX, CycloneDX.</li>
+                <li>Cloud provider docs on OIDC workload identity (AWS, GCP, Azure).</li>
+                <li>Internal incident response and key management runbooks (if available).</li>
+            </ul>
+        </section>
+    </main>
+
+    <button id="backToTop" type="button">↑ Back to top</button>
+
+    <footer class="footer">
+        <div class="container grid2">
+            <div>
+                <strong>SalsaGate</strong><br />
+                Built for the secure software future.
+            </div>
+            <div>
+                <div>Back to: <a href="index.html">Marketing Site</a></div>
+                <div>Key sections: Abstract • Architecture • Security • Testing</div>
+            </div>
+        </div>
+        <div class="container" style="margin-top: 12px">
+            © 2025 SalsaGate Project • <a href="#" data-theme-toggle>Toggle theme</a>
+        </div>
+    </footer>
+
+    <script src="assets/app.js"></script>
+</body>
+
+</html>
