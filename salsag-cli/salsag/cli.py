@@ -54,7 +54,6 @@ def start(artifact, config, bucket, table, dry_run):
         console.print("🔍 DRY RUN - No changes will be made", style="yellow")
     
     # Initialize SalsaG core
-    print("INitializinf core... ")
     core = SalsaGCore(cfg)
     
     with Progress(

@@ -47,7 +47,7 @@ def get_default_config() -> Dict[str, Any]:
         'aws': {
             'region': 'us-east-1',
             'staging_bucket': 'your-staging-bucket',
-            'ledger_table': 'trust-ledger',
+            'ledger_table': 'trust-ledger'
         },
         'signing': {
             'oidc_issuer': 'https://token.actions.githubusercontent.com',
@@ -66,6 +66,7 @@ def get_default_config() -> Dict[str, Any]:
         #'logging':{
             #'cloudwatch':{
             #    'level': 'INFO',
+            #    'region': us-east-2,
             #    'log_group':'SalsaGate',
             #    'stream_name':"cli"
             #}
