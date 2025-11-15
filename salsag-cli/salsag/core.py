@@ -29,7 +29,6 @@ class SalsaGCore:
 
         self.logger = get_logger("SalsaG")
         initialize_logger(config['logging'])
-        metric_count("Init")
 
         self.rekor = RekorClient()
     
@@ -170,6 +169,7 @@ class SalsaGCore:
             except Exception as e:
                 # Silently create empty placeholder files
                 print(f"⚠️  Signing failed: {e}")
+                metric_count("SignArtifact-Error")
                 for sig_file in signature_files.values():
                     sig_file.touch()
             
@@ -254,10 +254,12 @@ class SalsaGCore:
                 if not sig_file.exists() or sig_file.stat().st_size == 0:
                     print("⚠️  Signature file missing or empty - skipping cosign verification")
                     step.kv["WARN"] = "Missing siganture file"
+                    metric_count("CosignVerify-MissingSig")
                     return True  # Don't fail pipeline for missing signatures in CI
                 
                 if not cert_file.exists() or cert_file.stat().st_size == 0:
                     print("⚠️  Certificate file missing or empty - skipping cosign verification")
+                    metric_count("CosignVerify-MissingCert")
                     step.kv["WARN"] = "Missing certificate file"
                     return True
                 
@@ -277,13 +279,16 @@ class SalsaGCore:
                     return True
                 else:
                     print(f"❌ Cosign verification failed: {result.stderr}")
+                    metric_count("CosignVerify-FAIL")
                     return False
                     
             except subprocess.CalledProcessError as e:
                 print(f"❌ Cosign verification error: {e}")
+                metric_count("CosignVerify-ERROR")
                 return False
             except Exception as e:
                 print(f"❌ Unexpected error during cosign verification: {e}")
+                metric_count("CosignVerify-ERROR")
                 return False
 
     def verify_from_ledger(self, artifact_name: str) -> Dict[str, Any]:
@@ -319,9 +324,11 @@ class SalsaGCore:
                             if not rekor_verified:
                                 result['verified'] = False
                                 result['details'] = 'Rekor verification failed'
+                                metric_count("LedgerVerify-FAIL")
                                 
                         except RekorError as e:
                             print(f"⚠️  Rekor verification failed: {e}")
+                            metric_count("LedgerVerify-ERROR")
                             result['rekor_verified'] = False
                             result['rekor_error'] = str(e)
                             # Don't fail completely, ledger entry still valid
@@ -331,6 +338,7 @@ class SalsaGCore:
                     return {'verified': False, 'status': 'Not found in ledger'}
         
             except ClientError as e:
+                metric_count("LedgerVerify-Error")
                 raise RuntimeError(f"DynamoDB error: {e}")
     
     def verify_artifact_comprehensive(self, artifact_name: str) -> Dict[str, Any]:
@@ -350,7 +358,6 @@ class SalsaGCore:
                 verification_results['ledger_verified'] = ledger_result.get('verified', False)
                 
                 if verification_results['ledger_verified']:
-                    metric_count("ledgerVerified")
                     verification_results['details'].append("✅ Trust ledger verification passed")
                     
                     # Step 2: Download and verify checksum if ledger has digest
@@ -378,9 +385,9 @@ class SalsaGCore:
                             if calculated_digest == stored_digest:
                                 verification_results['checksum_verified'] = True
                                 verification_results['details'].append("✅ Checksum verification passed")
-                                metric_count("CheckSumVerified")
+
                             else:
-                                metric_count("CheckSumVerifyFailed")
+                                
                                 verification_results['details'].append("❌ Checksum verification failed")
                     
                     # Step 3: Verify cosign signatures if they exist
@@ -424,12 +431,10 @@ class SalsaGCore:
                                 verification_results['cosign_verified'] = True
                                 
                     except Exception as e:
-                        
                         verification_results['details'].append(f"⚠️  Cosign verification error: {e}")
                         verification_results['cosign_verified'] = True  # Don't fail pipeline
                         
                 else:
-                    metric_count("ledgerVerifyFailed")
                     verification_results['details'].append("❌ Trust ledger verification failed")
                 
                 # Overall verification: ledger must pass, checksum should pass if available
@@ -438,11 +443,15 @@ class SalsaGCore:
                     verification_results['checksum_verified'] and
                     verification_results['cosign_verified']
                 )
+                if not verification_results['overall_verified']:
+                    metric_count("FullVerify-FAIL")
+
                 step.kv["overall_verified"]= verification_results['overall_verified']
                 return verification_results
                 
 
             except Exception as e:
+                metric_count("FullVerify-ERROR")
                 verification_results['details'].append(f"❌ Verification error: {e}")
                 return verification_results
             """Get statistics from trust ledger"""
