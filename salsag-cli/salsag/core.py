@@ -13,7 +13,7 @@ from typing import Dict, List, Any, Optional
 import boto3
 from botocore.exceptions import ClientError
 
-from .sg_logging import get_logger as gLog
+from .sg_logging import get_logger
 from .sg_logging import log_step, metric_count, initialize_logger
 
 from .rekor_client import RekorClient, RekorError
@@ -26,9 +26,9 @@ class SalsaGCore:
         self.s3 = boto3.client('s3', region_name=config['aws']['region'])
         self.dynamodb = boto3.resource('dynamodb', region_name=config['aws']['region'])
         self.table = self.dynamodb.Table(config['aws']['ledger_table'])
-        initialize_logger(config.get("logging"))
-        
-        self.logger = gLog("SalsaG")
+
+        self.logger = get_logger("SalsaG")
+        initialize_logger(config['logging'])
         metric_count("Init")
 
         self.rekor = RekorClient()

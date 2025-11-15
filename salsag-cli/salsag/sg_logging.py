@@ -37,31 +37,36 @@ class ContextFilter(logging.Filter):
 _root = logging.getLogger("salsagate")
 
 
-def initialize_logger(cfg: dict | None = None):
-    print("initalizing logger")
-        # Clear any existing handlers (in case we’re reinitializing)
-    for h in list(_root.handlers):
-        _root.removeHandler(h)
-    _root.handlers.clear()
+def initialize_logger(log_cfg: dict | None = None):
 
-    # Remove filters too (optional)
-    for f in list(_root.filters):
-        _root.removeFilter(f)
+
+    if not log_cfg:
+        return False
+    
+    #clear any app owned handlers in case of reinit
+    for h in list(_root.handlers):
+        if getattr(h, "_salsag_owned", False):
+            _root.removeHandler(h)
+
+    #clear any app owned filters in case of reinit
+    for f in list(_root.filters): 
+        if getattr(f, "_salsag_owned", False):
+            _root.removeFilter(f)
 
     # Reset level
-    _root.setLevel(logging.NOTSET)
+    _root.setLevel(logging.INFO)
     _root.propagate = False
 
-    # 🚫 If no config is provided, leave logger inert and exit early
-    if not cfg:
-        return
-    print(config)
+    
     # CloudWatch Handler
-    if "cloudwatch" in cfg:
-        log_group = os.getenv("LOG_GROUP", cfg["cloudwatch"].get("log_group")) or f"/salsagate/{_ENV}/app"
-        stream_name = cfg["cloudwatch"].get("stream_name")
-        cw_log_level_value =  cfg["cloudwatch"].get("level")
-        cloudwatch_client = boto3.client("logs", region_name="us-east-2")
+
+    if "cloudwatch" in log_cfg:
+        log_group = os.getenv("LOG_GROUP", log_cfg["cloudwatch"].get("log_group")) or f"/salsagate/{_ENV}/app"
+        stream_name = log_cfg["cloudwatch"].get("stream_name")
+        cw_log_level_value =  log_cfg["cloudwatch"].get("level")
+        cw_region_name = log_cfg["cloudwatch"].get("region")
+        
+        cloudwatch_client = boto3.client("logs", region_name=cw_region_name)
 
         cw_handler = watchtower.CloudWatchLogHandler(
             log_group=log_group,
@@ -70,21 +75,25 @@ def initialize_logger(cfg: dict | None = None):
             create_log_group=True,
             use_queues=True,
         )
+        cw_handler._salsag_owned = True
         cw_handler.setFormatter(jsonlogger.JsonFormatter())
         cw_handler.setLevel(cw_log_level_value)
         _root.addHandler(cw_handler)
 
     # Syslog Handler
-    if "syslog" in cfg:
-        syslog_addr = cfg["syslog"].get("address", "/dev/log")
-        syslog_log_level_value =  cfg["cloudwatch"].get("level")
+    if "syslog" in log_cfg:
+        syslog_addr = log_cfg["syslog"].get("address", "/dev/log")
+        syslog_log_level_value =  log_cfg["cloudwatch"].get("level")
         syslog_handler = logging.handlers.SysLogHandler(address=syslog_addr)
+        syslog_handler._salsag_owned = True
         syslog_handler.setFormatter(jsonlogger.JsonFormatter())
         syslog_handler.setLevel(syslog_log_level_value)
         _root.addHandler(syslog_handler)
 
     # Always add contextual info
-    _root.addFilter(ContextFilter())
+    filter = ContextFilter()
+    filter._salsag_owned = True
+    _root.addFilter(filter)
 
 
 

@@ -54,6 +54,7 @@ def start(artifact, config, bucket, table, dry_run):
         console.print("🔍 DRY RUN - No changes will be made", style="yellow")
     
     # Initialize SalsaG core
+    print("INitializinf core... ")
     core = SalsaGCore(cfg)
     
     with Progress(
@@ -85,7 +86,7 @@ def start(artifact, config, bucket, table, dry_run):
             
             # Step 5: Upload to S3
             task5 = progress.add_task("☁️ Uploading to S3...", total=None)
-            #s3_urls = core.upload_artifacts(tarball_path, signature_files, sbom_path, provenance_path, dry_run)
+            s3_urls = core.upload_artifacts(tarball_path, signature_files, sbom_path, provenance_path, dry_run)
             progress.update(task5, description="✅ Uploaded to S3")
             
             # Step 6: Record in ledger
