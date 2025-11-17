@@ -89,7 +89,7 @@ class SalsaGCore:
             syft_bin_path = shutil.which("syft")
             if syft_bin_path:
                 try:
-                    sanitized_path = artifact_path.expanduser.resolve(strict=True)
+                    sanitized_path = artifact_path.expanduser().resolve(strict=True)
                     args = [syft_bin_path, str(sanitized_path), "-o", "spdx-json"]
                     proc = subprocess.run(args, capture_output=True, text=True, timeout=500)
                     if proc.returncode == 0:
