@@ -15,6 +15,9 @@ setup(
         "requests>=2.28.0",
         "cryptography>=3.4.0",
         "rich>=12.0.0",
+        "anchore_syft>=1.18.1",
+        "watchtower>=3.4.0",
+        "python-json-logger>=2.0.0",
     ],
     entry_points={
         "console_scripts": [
