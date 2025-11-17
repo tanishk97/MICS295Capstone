@@ -6,14 +6,13 @@ from typing import Dict, Any
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """Load SalsaG configuration from YAML file"""
-    
     config_file = Path(config_path)
     if not config_file.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     
     with open(config_file, 'r') as f:
         config = yaml.safe_load(f)
-    
+
     # Validate required fields
     required_fields = [
         'aws.region',
@@ -58,5 +57,23 @@ def get_default_config() -> Dict[str, Any]:
             'compression': 'gzip',
             'include_sbom': True,
             'include_provenance': True
-        }
+        },
+        # Default is to have no remote logging.
+        # Supported logging include one or multiple options of:
+        #   cloudwatch -> log to cloudwatch. cloudwatch_enabled must be set to True in aws settings
+        #   syslog -> log to a local or remote syslog server
+        #   local -> log to a local file, imcluding   
+        #'logging':{
+            #'cloudwatch':{
+            #    'level': 'INFO',
+            #    'region': us-east-2,
+            #    'log_group':'SalsaGate',
+            #    'stream_name':"cli"
+            #}
+            #'syslog':{
+            #   'level':'DEBUG',
+            #   'address':'/dev/log',
+            #} 
+        #}
+
     }
