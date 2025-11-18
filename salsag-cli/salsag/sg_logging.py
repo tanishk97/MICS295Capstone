@@ -100,7 +100,7 @@ def initialize_logger(log_cfg=None):
 def get_logger(name: str):
     return _root.getChild(name)
 
-def metric_count(name: str, dims: dict | None = None, count: int = 1):
+def metric_count(name: str, dims=None, count: int = 1):
     """Emit a Count metric using CloudWatch EMF in the SalsaGate namespace."""
     if dims is None: dims = {}
     payload = {
