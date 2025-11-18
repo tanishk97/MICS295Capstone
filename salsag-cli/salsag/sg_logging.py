@@ -37,7 +37,7 @@ class ContextFilter(logging.Filter):
 _root = logging.getLogger("salsagate")
 
 
-def initialize_logger(log_cfg: dict | None = None):
+def initialize_logger(log_cfg=None):
 
 
     if not log_cfg:
