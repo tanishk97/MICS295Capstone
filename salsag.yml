@@ -16,4 +16,4 @@ logging:
   cloudwatch:
     level: "INFO"
     log_group: "salsagate"
-    stream_name: "mintyfresh"
+    stream_name: "salsag-core"
