@@ -51,7 +51,7 @@ class SalsaGCore:
         self.table = self.dynamodb.Table(config['aws']['ledger_table'])
 
         self.logger = get_logger("SalsaG")
-        initialize_logger(config['logging'])
+        initialize_logger(config.get('logging'))
 
         self.rekor = RekorClient()
     
