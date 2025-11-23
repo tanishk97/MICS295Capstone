@@ -17,11 +17,18 @@ phases:
   build:
     commands:
       - |
+        # Create salsag.yml config file with CloudWatch metrics enabled
         cat > salsag.yml << EOF
         aws:
           region: us-east-1
           staging_bucket: mics295-pipeline-artifacts-bucket
           ledger_table: trust-ledger
+        logging:
+          cloudwatch:
+            level: "INFO"
+            log_group: "/salsagate/verifier"
+            stream_name: "verification-metrics"
+            region: us-east-1
         EOF
       - |
         ARTIFACT_NAME=$(basename $ARTIFACT_KEY)
