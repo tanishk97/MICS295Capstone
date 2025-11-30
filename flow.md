@@ -4,7 +4,7 @@
 graph TD
     A[GitHub Push] --> B[GitHub Actions]
     B --> C[AWS CodePipeline]
-    C --> D[CodeBuild - Build & Deploy]
+    C --> D[CodeBuild - Build, Approve & Deploy]
     D --> E[S3 Bucket - Website Deployment]
 
     %% Styling
